@@ -28,7 +28,8 @@ Open it with `/jest` (alias `/ew`), from *Options → AddOns → Jest*, or from 
 - **Jest page:**
   - Set the wheel key and the repeat key: click the button, then press a key. Right-click clears it.
   - Edit the slices: pick a type (Emote, Text or Macro), type the action and click Save (Enter also saves emote and text slices).
-  - Optionally set a label and choose an icon from the picker.
+  - For emotes, matches appear as you type. The arrow keys move through them, and Enter, Tab or a click picks one, which saves it.
+  - Optionally set a label (the default shows in grey inside the box) and choose an icon from the picker.
   - Add, Remove, and Up/Down to reorder. Test performs an emote or text slice immediately.
 - **Appearance page:** ring radius, cancel-zone size, wheel scale and sounds.
 
@@ -66,6 +67,16 @@ python -m venv .venv; .venv\Scripts\pip install -r tests\requirements.txt
 .venv\Scripts\python tests\check.py   # syntax-check all Lua + the secure snippet, geometry tests
 .venv\Scripts\python tests\smoke.py   # load the addon against a mocked WoW API, exercise slash/skin/secure paths
 ```
+
+## Wheel art
+The slice segments in `Jest/Media/wedge_<N>.tga` (and `_glow`) are generated, one pair for each slice count from 2 to 12. Each is drawn pointing up and rotated into place in-game. To change their shape, edit `tools/gen_wedges.py`. The geometry constants must match the ones at the top of `Jest/UI/Skin.lua`. Then regenerate:
+
+```powershell
+.venv\Scripts\pip install -r tools\requirements.txt
+.venv\Scripts\python tools\gen_wedges.py --preview preview.png   # preview.png shows an 8-slice wheel
+```
+
+The client only notices new or changed media files after a full restart, not a `/reload`.
 
 ## Debugging in-game
 - `/jest debug` prints the slice the secure code picked and the slice the skin highlighted on every fire. A `MISMATCH` means the two geometry copies have drifted.

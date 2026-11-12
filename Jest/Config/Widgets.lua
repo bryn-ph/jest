@@ -47,6 +47,97 @@ function Widgets.Input(parent, width, maxLetters)
 	return box
 end
 
+-- Grey hint text shown inside an input while it's empty.
+function Widgets.SetPlaceholder(box, text)
+	if not box.placeholder then
+		local fs = box:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+		fs:SetPoint("LEFT", 6, 0)
+		fs:SetPoint("RIGHT", -6, 0)
+		fs:SetJustifyH("LEFT")
+		fs:SetWordWrap(false)
+		box.placeholder = fs
+		box:HookScript("OnTextChanged", function(self)
+			self.placeholder:SetShown(self:GetText() == "")
+		end)
+	end
+	box.placeholder:SetText(text or "")
+	box.placeholder:SetShown(box:GetText() == "")
+end
+
+-- Section title with a hairline running to the right edge of `parent`.
+function Widgets.Header(parent, text)
+	local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	fs:SetText(text)
+	fs:SetJustifyH("LEFT")
+	local line = parent:CreateTexture(nil, "ARTWORK")
+	line:SetColorTexture(1, 1, 1, 0.12)
+	line:SetHeight(1)
+	line:SetPoint("LEFT", fs, "RIGHT", 8, 0)
+	line:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
+	return fs
+end
+
+-- Subtle bordered panel used to group related controls.
+function Widgets.Card(parent)
+	local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+	card:SetBackdrop(BACKDROP)
+	card:SetBackdropColor(1, 1, 1, 0.03)
+	card:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+	return card
+end
+
+-- Segmented control: a row of mutually exclusive options.
+-- items = { { value = "emote", text = "Emote" }, ... }; onSelect(value) is called on click.
+-- Returns the holder; holder.buttons[value] are the clickable segments; holder:SetValue(v).
+function Widgets.Segmented(parent, items, width, onSelect)
+	local holder = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+	holder:SetSize(width, 24)
+	holder:SetBackdrop(BACKDROP)
+	holder:SetBackdropColor(0, 0, 0, 0.5)
+	setBorder(holder, BORDER)
+	holder.buttons = {}
+
+	local segW = width / #items
+	for i, item in ipairs(items) do
+		local b = CreateFrame("Button", nil, holder)
+		b:SetPoint("TOPLEFT", (i - 1) * segW + 1, -1)
+		b:SetSize(segW - 2, 22)
+		b.bg = b:CreateTexture(nil, "BACKGROUND")
+		b.bg:SetAllPoints()
+		b.bg:SetColorTexture(1, 0.82, 0, 0.25)
+		b.bg:Hide()
+		local hover = b:CreateTexture(nil, "HIGHLIGHT")
+		hover:SetAllPoints()
+		hover:SetColorTexture(1, 1, 1, 0.08)
+		if i > 1 then
+			local div = b:CreateTexture(nil, "BORDER")
+			div:SetColorTexture(0.4, 0.4, 0.4, 1)
+			div:SetWidth(1)
+			div:SetPoint("TOPLEFT", -1, 0)
+			div:SetPoint("BOTTOMLEFT", -1, 0)
+		end
+		b.text = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		b.text:SetPoint("CENTER")
+		b.text:SetText(item.text)
+		b:SetScript("OnClick", function() onSelect(item.value) end)
+		holder.buttons[item.value] = b
+	end
+
+	function holder:SetValue(value)
+		for v, b in pairs(self.buttons) do
+			local on = v == value
+			b.bg:SetShown(on)
+			if on then
+				b.text:SetTextColor(1, 1, 1)
+			else
+				b.text:SetTextColor(0.62, 0.62, 0.62)
+			end
+		end
+	end
+
+	return holder
+end
+
 -- /jest debug: log every text change so input problems can be diagnosed from chat.
 -- Callers must use HookScript (not SetScript) for OnTextChanged or this trace is lost.
 function Widgets.TraceInput(box, name)

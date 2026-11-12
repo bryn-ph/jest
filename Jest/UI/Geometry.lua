@@ -19,10 +19,20 @@ function Geometry.SliceAt(dx, dy, n, deadZone)
 	return floor((a + step / 2) / step) % n + 1
 end
 
+-- Angle of slice i's centre in degrees, clockwise from 12 o'clock.
+function Geometry.SliceAngle(i, n)
+	return (i - 1) * 360 / n
+end
+
 -- Centre of slice i as an (x, y) offset from the wheel centre.
 function Geometry.SlicePosition(i, n, radius)
-	local a = rad((i - 1) * 360 / n)
+	local a = rad(Geometry.SliceAngle(i, n))
 	return radius * sin(a), radius * cos(a)
+end
+
+-- Signed shortest turn (degrees, -180..180) from angle `from` to angle `to`.
+function Geometry.AngleDelta(from, to)
+	return (to - from + 540) % 360 - 180
 end
 
 return Geometry

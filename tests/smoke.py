@@ -30,6 +30,13 @@ local function newObj(name)
   function m.RegisterEvent(self, e) end
   function m.HookScript(self, k, f) local prev = self.__scripts[k]; self.__scripts[k] = function(...) if prev then prev(...) end f(...) end end
   function m.EnableKeyboard(self, v) self.__kb = not not v end
+  function m.SetRotation(self, r) self.__rot = r end
+  function m.SetAlpha(self, a) self.__alpha = a end
+  function m.SetTexture(self, t) self.__tex = t end
+  function m.SetFocus(self) self.__focus = true end
+  function m.ClearFocus(self) self.__focus = false end
+  function m.HasFocus(self) return self.__focus == true end
+  function m.SetTexCoord(self, ...) __texcoords = __texcoords or {}; __texcoords[self] = { ... } end
   function m.SetText(self, t) self.__text = t end
   function m.GetText(self) return self.__text or '' end
   function m.SetShown(self, v) self.__shown = not not v end
@@ -150,7 +157,43 @@ btn:JestOnClose(1, 'mouse')
 check(not skin.__shown, 'skin hidden after close anim')
 btn:JestOnOpen(); btn:JestOnClose(nil, 'deadzone'); btn:JestOnOpen(); btn:JestOnClose(3, 'key'); btn:JestOnRepeat(3)
 
+-- ===== wedge art + eased highlight =====
+local art = ns.Skin._art
+local function near(a, b) return math.abs(a - b) < 1e-6 end
+check(art.wedges[1] and art.wedges[1].__tex == [[Interface\AddOns\Jest\Media\wedge_8]], 'wedge texture path for 8 slices, got ' .. tostring(art.wedges[1] and art.wedges[1].__tex))
+check(near(art.wedges[3].__rot, -math.rad(90)), 'wedge 3 rotated 90 deg clockwise')
+check(art.glow.__tex == [[Interface\AddOns\Jest\Media\wedge_8_glow]], 'glow texture path')
+check(ns.Geometry.AngleDelta(350, 10) == 20 and ns.Geometry.AngleDelta(10, 350) == -20, 'AngleDelta wraps')
+__t = 200; __cx, __cy = 500, 500
+btn:JestOnOpen()
+check(art.highlight.__alpha == 0, 'highlight hidden on open')
+__cx, __cy = 600, 500 -- right = slice 3 of 8
+skin.__scripts.OnUpdate(skin, 0.016)
+check(near(art.highlight.__rot, -math.rad(90)), 'highlight snaps to first hovered slice')
+for _ = 1, 30 do skin.__scripts.OnUpdate(skin, 0.016) end
+check(art.highlight.__alpha > 0.95, 'highlight fades in, alpha=' .. tostring(art.highlight.__alpha))
+__cx, __cy = 500, 400 -- down = slice 5 (180 deg)
+skin.__scripts.OnUpdate(skin, 0.016)
+local mid = -art.highlight.__rot
+check(mid > math.rad(90) and mid < math.rad(180), 'highlight sweeps, not snaps, between slices')
+for _ = 1, 60 do skin.__scripts.OnUpdate(skin, 0.016) end
+check(math.abs(-art.highlight.__rot - math.rad(180)) < math.rad(0.5), 'highlight settles on slice 5')
+__cx, __cy = 500, 500 -- back to centre: fades out
+for _ = 1, 30 do skin.__scripts.OnUpdate(skin, 0.016) end
+check(art.highlight.__alpha < 0.05, 'highlight fades out in dead zone')
+btn:JestOnClose(2, 'key')
+check(near(art.highlight.__rot, -math.rad(45)) and art.highlight.__alpha == 1, 'fired slice highlighted at full alpha')
+-- fallback: 1 slice has no wedge art
+for _ = 1, 7 do SlashCmdList.JEST('remove 1') end
+check(#ns.DB.Wheel().slices == 1, 'down to one slice')
+check(not art.wedges[1].__shown and not art.highlight.__shown, 'no wedge art for a 1-slice wheel')
+SlashCmdList.JEST('reset yes')
+check(art.wedges[8].__shown and art.highlight.__shown, 'art back after reset')
+-- restore the settings the later combat-queue test expects
+SlashCmdList.JEST('radius 150'); SlashCmdList.JEST('deadzone 30'); SlashCmdList.JEST('scale 1.5')
+
 -- watchdog
+__t = 0
 btn:JestOnOpen(); __t = 100; skin.__scripts.OnUpdate(skin, 0.016)
 check(not skin.__shown, 'watchdog closes')
 
@@ -279,10 +322,57 @@ check(ui.single:GetText() == 'bows deeply.', 'typed text kept across kind switch
 ui.revert:Click()
 check(ui.single:GetText() == 'BOW' and not ui.save:IsEnabled(), 'revert restores saved')
 
+-- ===== UX pass =====
+-- Emote search: prefix matches first, then substring
+local found = ns.Emotes.Search('a', 10)
+check(found[1].token == 'APPLAUD', 'search: prefix match first, got ' .. tostring(found[1] and found[1].token))
+local anyContains = false
+for _, e in ipairs(found) do if e.token == 'WAVE' then anyContains = true end end
+check(anyContains, 'search: substring matches included')
+check(#ns.Emotes.Search('', 10) == 0, 'search: empty query returns nothing')
+
+-- Suggestions dropdown while typing an emote
+ns.Panel.Select(6)
+ui.kind.emote:Click()
+ui.single:SetFocus(); ui.single.__scripts.OnEditFocusGained(ui.single)
+ui.single:SetText('ro'); ui.single.__scripts.OnTextChanged(ui.single, true)
+check(ui.suggest.__shown, 'suggestions shown while typing')
+check(ui.suggest.rows[1].token == 'ROAR', 'first suggestion is ROAR, got ' .. tostring(ui.suggest.rows[1].token))
+ui.single.__scripts.OnArrowPressed(ui.single, 'DOWN')
+ui.single.__scripts.OnArrowPressed(ui.single, 'UP')
+ui.single.__scripts.OnEnterPressed(ui.single)
+check(ns.DB.Wheel().slices[6].value == 'ROAR', 'Enter picks highlighted suggestion and saves')
+check(not ui.suggest.__shown, 'suggestions hidden after pick')
+ui.single:SetFocus(); ui.single:SetText('zzz'); ui.single.__scripts.OnTextChanged(ui.single, true)
+check(not ui.suggest.__shown, 'no suggestions for no matches')
+ui.single:SetText('wave'); ui.single.__scripts.OnTextChanged(ui.single, true)
+check(not ui.suggest.__shown, 'no dropdown when the text already is the only match')
+ui.revert:Click()
+ui.kind.text:Click(); ui.single:SetFocus(); ui.single:SetText('ro'); ui.single.__scripts.OnTextChanged(ui.single, true)
+check(not ui.suggest.__shown, 'no suggestions for text kind')
+ui.revert:Click()
+
+-- Segmented control reflects the draft kind; unsaved tag follows dirty state
+check(ui.kindSwitch.buttons.emote.bg.__shown and not ui.kindSwitch.buttons.macro.bg.__shown, 'segmented shows emote selected')
+ui.kind.macro:Click()
+check(ui.kindSwitch.buttons.macro.bg.__shown, 'segmented follows switch')
+check(ui.unsaved.__shown, 'unsaved tag shown when dirty')
+ui.revert:Click()
+check(not ui.unsaved.__shown, 'unsaved tag hidden after revert')
+
+-- Label placeholder shows the default label; list shows kind tags
+check(ui.labelBox.placeholder and ui.labelBox.placeholder:GetText() == 'Roar', 'label placeholder is default label, got ' .. tostring(ui.labelBox.placeholder and ui.labelBox.placeholder:GetText()))
+check(ui.labelBox.placeholder.__shown, 'placeholder visible while label empty')
+
+-- Icons are cropped (border trimmed) in the wheel
+local cropped = 0
+for _, s in pairs(__texcoords or {}) do cropped = cropped + 1 end
+check(cropped > 0, 'icons cropped with SetTexCoord')
+
 -- hide settles drafts
 ui.single:SetText('cheer'); ui.single.__scripts.OnTextChanged(ui.single, true)
 __canvas.__scripts.OnHide(__canvas)
-check(ns.DB.Wheel().slices[5].value == 'CHEER', 'hide auto-saves valid draft')
+check(ns.DB.Wheel().slices[6].value == 'CHEER', 'hide auto-saves valid draft')
 
 return fails
 """ + " end")

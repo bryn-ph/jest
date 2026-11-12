@@ -41,6 +41,32 @@ function Emotes.Resolve(input)
 	return entry and entry.token or nil
 end
 
+-- Emotes matching `query` (token or slash command, case-insensitive, leading "/" ignored).
+-- Prefix matches come first, then substring matches; at most `limit` results.
+function Emotes.Search(query, limit)
+	if not list then scan() end
+	local q = (query or ""):gsub("^/", ""):lower()
+	if q == "" then return {} end
+	local prefix, contains = {}, {}
+	for _, e in ipairs(list) do
+		local token = e.token:lower()
+		local cmd = e.cmd and e.cmd:gsub("^/", ""):lower() or token
+		if token:sub(1, #q) == q or cmd:sub(1, #q) == q then
+			prefix[#prefix + 1] = e
+		elseif token:find(q, 1, true) or cmd:find(q, 1, true) then
+			contains[#contains + 1] = e
+		end
+	end
+	local results = {}
+	for _, group in ipairs({ prefix, contains }) do
+		for _, e in ipairs(group) do
+			if #results >= limit then return results end
+			results[#results + 1] = e
+		end
+	end
+	return results
+end
+
 -- "WAVE" -> "Wave" (prefers the localized slash command when available).
 function Emotes.Label(token)
 	if not list then scan() end

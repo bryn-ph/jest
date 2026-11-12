@@ -45,3 +45,9 @@ ns.KindIcons = {
 }
 
 ns.FALLBACK_ICON = 134400 -- INV_Misc_QuestionMark
+
+-- Standard icons have a dark bevelled border baked into the outer ~8%. Cropping it lets the
+-- artwork fill round masks and square frames edge to edge.
+function ns.CropIcon(texture)
+	texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+end

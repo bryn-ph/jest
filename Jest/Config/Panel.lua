@@ -1,19 +1,25 @@
 -- Options panel in Blizzard's Settings UI (Options -> AddOns -> Jest):
---   * "Jest" canvas page: key bindings + slice editor (list, kind, action, label, icon, test)
+--   * "Jest" canvas page: key bindings + slice list + slice editor card
 --   * "Appearance" vertical-layout subpage: radius, dead zone, scale, sounds
 -- Everything writes to the DB and calls ns.Changed(), which re-applies the secure wheel
 -- (queued until combat ends if needed).
-local _, ns = ...
+local addonName, ns = ...
 
 local Panel = {}
 ns.Panel = Panel
 
-local ROW_H = 26
-local LIST_W = 210
+local ROW_H = 24
+local LIST_W = 220
+local LEFT = 16          -- canvas left padding
+local FIELD_X = 70       -- x of input controls inside the editor card
+local SUGGEST_MAX = 8
+local SUGGEST_ROW_H = 20
+local STATUS_SECONDS = 4 -- success messages clear themselves after this long
+
 local KINDS = { "emote", "text", "macro" }
 local KIND_LABEL = { emote = "Emote", text = "Text", macro = "Macro" }
 local KIND_HINT = {
-	emote = "An emote name or command, e.g. wave, dance, /roar. /jest emotes lists them all.",
+	emote = "Start typing to search emotes (e.g. wave, dance, roar). Tab or Enter picks the highlighted one.",
 	text = "Custom emote text. Others see \"<your name> <text>\".",
 	macro = "Any macro text, e.g. /cast or /use. Works in combat. Up to 255 characters.",
 }
@@ -37,13 +43,22 @@ local function slices()
 	return ns.DB.Wheel().slices
 end
 
+local statusToken = 0
 local function setStatus(text, isError)
 	if not ui.status then return end
-	ui.status:SetText(text or "")
+	text = text or ""
+	ui.status:SetText(text)
 	if isError then
 		ui.status:SetTextColor(1, 0.35, 0.35)
 	else
 		ui.status:SetTextColor(0.5, 1, 0.5)
+	end
+	statusToken = statusToken + 1
+	local token = statusToken
+	if text ~= "" and not isError and C_Timer and C_Timer.After then
+		C_Timer.After(STATUS_SECONDS, function()
+			if token == statusToken then ui.status:SetText("") end
+		end)
 	end
 end
 
@@ -75,6 +90,11 @@ local function label(parent, text, font)
 	return fs
 end
 
+local function addonVersion()
+	local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+	return get and get(addonName, "Version") or nil
+end
+
 ---------------------------------------------------------------------------
 -- Key binding capture buttons
 ---------------------------------------------------------------------------
@@ -99,7 +119,7 @@ local function clearBinding(command)
 end
 
 local function createBindButton(parent, command)
-	local b = button(parent, "", 160)
+	local b = button(parent, "", 150)
 	b:RegisterForClicks("AnyUp")
 
 	function b:Refresh()
@@ -189,15 +209,31 @@ local function createBindButton(parent, command)
 		if self.capturing then stop(self) end
 	end)
 
-	tooltip(b, "Key binding", "Click, then press a key (modifiers and middle/side mouse buttons work). Right-click to clear. Esc cancels.")
+	tooltip(b, "Key binding", "Click, then press a key. Modifiers and middle/side mouse buttons work. Right-click to clear; Esc cancels.")
 	return b
 end
 
 ---------------------------------------------------------------------------
 -- Slice list
 ---------------------------------------------------------------------------
+local function rowTooltip(r)
+	local s = slices()[r.index]
+	if not s then return end
+	GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
+	GameTooltip:SetText(ns.Slices.HasAction(s) and ns.Slices.Label(s) or "Empty slice", 1, 1, 1)
+	if ns.Slices.HasAction(s) then
+		GameTooltip:AddLine(KIND_LABEL[s.kind] .. ": " .. s.value, 0.8, 0.8, 0.8, true)
+	end
+	local key = ns.Slices.KeyLabel(r.index)
+	if key ~= "" then
+		GameTooltip:AddLine("Press " .. key .. " while the wheel is open to fire it.", 0.5, 0.5, 0.5, true)
+	end
+	GameTooltip:Show()
+end
+
 local function createRow(i)
 	local r = CreateFrame("Button", nil, ui.list)
+	r.index = i
 	r:SetSize(LIST_W, ROW_H - 2)
 	r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
 
@@ -208,25 +244,38 @@ local function createRow(i)
 	r.sel:SetAllPoints()
 	r.sel:SetColorTexture(1, 0.82, 0, 0.2)
 	r.sel:Hide()
-	r:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+	r.selBar = r:CreateTexture(nil, "ARTWORK")
+	r.selBar:SetColorTexture(1, 0.82, 0, 0.9)
+	r.selBar:SetWidth(2)
+	r.selBar:SetPoint("TOPLEFT")
+	r.selBar:SetPoint("BOTTOMLEFT")
+	r.selBar:Hide()
+	local hover = r:CreateTexture(nil, "HIGHLIGHT")
+	hover:SetAllPoints()
+	hover:SetColorTexture(1, 1, 1, 0.07)
 
 	r.num = label(r, "", "GameFontDisableSmall")
-	r.num:SetPoint("LEFT", 6, 0)
+	r.num:SetPoint("LEFT", 8, 0)
 	r.icon = r:CreateTexture(nil, "ARTWORK")
-	r.icon:SetSize(20, 20)
+	r.icon:SetSize(18, 18)
 	r.icon:SetPoint("LEFT", 22, 0)
+	ns.CropIcon(r.icon)
+	r.kind = label(r, "", "GameFontDisableSmall")
+	r.kind:SetPoint("RIGHT", -8, 0)
 	r.text = label(r, "", "GameFontHighlight")
-	r.text:SetPoint("LEFT", r.icon, "RIGHT", 6, 0)
-	r.text:SetPoint("RIGHT", -4, 0)
+	r.text:SetPoint("LEFT", r.icon, "RIGHT", 8, 0)
+	r.text:SetPoint("RIGHT", r.kind, "LEFT", -6, 0)
 	r.text:SetWordWrap(false)
 
 	r:SetScript("OnClick", function() Panel.Select(i) end)
+	r:SetScript("OnEnter", rowTooltip)
+	r:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	rows[i] = r
 	return r
 end
 
 ---------------------------------------------------------------------------
--- Editor
+-- Drafts
 ---------------------------------------------------------------------------
 local function draftValue()
 	return draft.values[draft.kind] or ""
@@ -279,25 +328,81 @@ local function switchKind(newKind)
 	draft.kind = newKind
 end
 
-local function setDraftValue(v)
-	draft.values[draft.kind] = v
-	ui.save:SetEnabled(isDirty())
-	ui.editorTitle:SetText(("Slice %d%s"):format(selected, isDirty() and " |cffffd100(unsaved)|r" or ""))
+local function updateDirtyState()
+	local dirty = isDirty()
+	ui.unsaved:SetShown(dirty)
+	ui.save:SetEnabled(dirty)
+	ui.revert:SetEnabled(dirty)
 end
 
+local function setDraftValue(v)
+	draft.values[draft.kind] = v
+	updateDirtyState()
+end
+
+---------------------------------------------------------------------------
+-- Emote suggestions (dropdown under the action box while typing an emote)
+---------------------------------------------------------------------------
+local suggestIndex = 0
+
+local function hideSuggestions()
+	if ui.suggest then ui.suggest:Hide() end
+	suggestIndex = 0
+end
+
+local function highlightSuggestion(i)
+	suggestIndex = i
+	for k, row in ipairs(ui.suggest.rows) do
+		row.sel:SetShown(k == i)
+	end
+end
+
+local function updateSuggestions()
+	if draft.kind ~= "emote" or not ui.single:HasFocus() then
+		hideSuggestions()
+		return
+	end
+	local text = ui.single:GetText()
+	local matches = ns.Emotes.Search(text, SUGGEST_MAX)
+	local exact = ns.Emotes.Resolve(text)
+	if #matches == 0 or (#matches == 1 and matches[1].token == exact) then
+		hideSuggestions()
+		return
+	end
+	for k, row in ipairs(ui.suggest.rows) do
+		local e = matches[k]
+		if e then
+			row.token = e.token
+			row.text:SetText(ns.Emotes.Label(e.token))
+			row.cmd:SetText(e.cmd or e.token)
+			row:Show()
+		else
+			row:Hide()
+		end
+	end
+	ui.suggest:SetHeight(#matches * SUGGEST_ROW_H + 2)
+	ui.suggest:Show()
+	highlightSuggestion(1)
+end
+
+local function moveSuggestion(delta)
+	if not ui.suggest:IsShown() then return end
+	local count = 0
+	for _, row in ipairs(ui.suggest.rows) do
+		if row:IsShown() then count = count + 1 end
+	end
+	if count == 0 then return end
+	highlightSuggestion((suggestIndex - 1 + delta) % count + 1)
+end
+
+---------------------------------------------------------------------------
+-- Editor
+---------------------------------------------------------------------------
 local function updateEditor()
 	local s = slices()[selected]
 	if not s then return end
-	local dirty = isDirty()
-	ui.editorTitle:SetText(("Slice %d%s"):format(selected, dirty and " |cffffd100(unsaved)|r" or ""))
-
-	for _, kind in ipairs(KINDS) do
-		if kind == draft.kind then
-			ui.kind[kind]:LockHighlight()
-		else
-			ui.kind[kind]:UnlockHighlight()
-		end
-	end
+	ui.editorTitle:SetText(("Slice %d"):format(selected))
+	ui.kindSwitch:SetValue(draft.kind)
 
 	local value = draftValue()
 	local isMacro = draft.kind == "macro"
@@ -308,10 +413,15 @@ local function updateEditor()
 		ns.Debug(("[panel] updateEditor rewrites %s: %q -> %q"):format(box.debugName or "?", box:GetText(), value))
 		box:SetText(value)
 	end
+	if not isMacro then hideSuggestions() end
 
+	-- The hint (and everything below it) follows whichever action box is visible.
+	ui.hint:ClearAllPoints()
+	ui.hint:SetPoint("TOPLEFT", isMacro and ui.multi or ui.single, "BOTTOMLEFT", 0, -6)
+	ui.hint:SetPoint("RIGHT", ui.card, "RIGHT", -12, 0)
 	local hint = KIND_HINT[draft.kind]
 	if draft.kind ~= s.kind and ns.Slices.HasAction(s) then
-		hint = ("Saved as %s: %s. Save to replace it, or switch back to keep it.\n%s"):format(
+		hint = ("|cffffd100Saved as %s: %s.|r Save to replace it, or switch back to keep it.\n%s"):format(
 			KIND_LABEL[s.kind], ns.Slices.Label({ kind = s.kind, value = s.value }), hint)
 	end
 	ui.hint:SetText(hint)
@@ -321,12 +431,11 @@ local function updateEditor()
 		ns.Debug(("[panel] updateEditor rewrites label: %q -> %q"):format(ui.labelBox:GetText(), s.label or ""))
 		ui.labelBox:SetText(s.label or "")
 	end
-	ui.labelHint:SetText(("Empty uses \"%s\""):format(ns.Slices.Label({ kind = s.kind, value = s.value })))
+	ns.Widgets.SetPlaceholder(ui.labelBox, ns.Slices.Label({ kind = s.kind, value = s.value }))
 	ui.iconButton.icon:SetTexture(ns.Slices.Icon(s))
 	ui.iconReset:SetEnabled(s.icon ~= nil)
 	ui.test:SetEnabled(ns.Slices.IsChat(s) and ns.Slices.HasAction(s))
-	ui.save:SetEnabled(dirty)
-	ui.revert:SetEnabled(dirty)
+	updateDirtyState()
 end
 
 function Panel.Save()
@@ -342,6 +451,14 @@ function Panel.Save()
 	ns.Changed() -- triggers Panel.Refresh via the change listener
 	setStatus(savedMessage())
 	return true
+end
+
+local function pickSuggestion(token)
+	hideSuggestions()
+	draft.values.emote = token
+	ui.single:SetText(token)
+	ui.single:ClearFocus()
+	Panel.Save()
 end
 
 -- Leaving a slice with unsaved edits: keep them if valid, otherwise say they were dropped.
@@ -368,42 +485,58 @@ end
 ---------------------------------------------------------------------------
 -- Build
 ---------------------------------------------------------------------------
-local function build()
-	built = true
-
+local function buildHeader()
 	local title = label(canvas, "Jest", "GameFontHighlightHuge")
-	title:SetPoint("TOPLEFT", 16, -16)
-	local sub = label(canvas, "Hold your wheel key, aim at a slice and release. Release in the centre or press Esc to cancel.", "GameFontHighlightSmall")
+	title:SetPoint("TOPLEFT", LEFT, -16)
+	local version = addonVersion()
+	if version then
+		local v = label(canvas, "v" .. version, "GameFontDisableSmall")
+		v:SetPoint("BOTTOMLEFT", title, "BOTTOMRIGHT", 6, 2)
+	end
+	local sub = label(canvas, "Hold your wheel key, aim at a slice and release. Release in the centre or press Esc to cancel. Type /jest help for chat commands.", "GameFontHighlightSmall")
 	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+	sub:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
+end
 
-	-- Bindings row
-	local wheelLabel = label(canvas, "Wheel key")
-	wheelLabel:SetPoint("TOPLEFT", 16, -72)
+local function buildBindings()
+	local header = ns.Widgets.Header(canvas, "Key bindings")
+	header:SetPoint("TOPLEFT", LEFT, -84)
+
+	local wheelLabel = label(canvas, "Open wheel", "GameFontHighlight")
+	wheelLabel:SetPoint("TOPLEFT", LEFT, -112)
 	ui.bindWheel = createBindButton(canvas, BIND_WHEEL)
 	ui.bindWheel:SetPoint("LEFT", wheelLabel, "RIGHT", 10, 0)
-	local repeatLabel = label(canvas, "Repeat key")
-	repeatLabel:SetPoint("LEFT", ui.bindWheel, "RIGHT", 24, 0)
+	local repeatLabel = label(canvas, "Repeat last", "GameFontHighlight")
+	repeatLabel:SetPoint("LEFT", ui.bindWheel, "RIGHT", 28, 0)
 	ui.bindRepeat = createBindButton(canvas, BIND_REPEAT)
 	ui.bindRepeat:SetPoint("LEFT", repeatLabel, "RIGHT", 10, 0)
 
-	-- Slice list
-	local listTitle = label(canvas, "Slices (clockwise from the top)")
-	listTitle:SetPoint("TOPLEFT", 16, -112)
+	local hint = label(canvas, "Click a button, then press a key. Right-click a button to clear it.", "GameFontDisableSmall")
+	hint:SetPoint("TOPLEFT", wheelLabel, "BOTTOMLEFT", 0, -12)
+end
+
+local function buildList()
+	local header = ns.Widgets.Header(canvas, "Slices  |cff888888clockwise from the top|r")
+	header:SetPoint("TOPLEFT", LEFT, -168)
+
+	-- Toolbar above the list so it never moves as slices are added/removed.
+	ui.add = button(canvas, "Add", 54)
+	ui.add:SetPoint("TOPLEFT", LEFT, -190)
+	ui.remove = button(canvas, "Remove", 70)
+	ui.remove:SetPoint("LEFT", ui.add, "RIGHT", 4, 0)
+	ui.up = button(canvas, "Up", 44)
+	ui.up:SetPoint("LEFT", ui.remove, "RIGHT", 4, 0)
+	ui.down = button(canvas, "Down", 44)
+	ui.down:SetPoint("LEFT", ui.up, "RIGHT", 4, 0)
+	tooltip(ui.up, "Move up", "Moves the slice one step anticlockwise on the wheel.")
+	tooltip(ui.down, "Move down", "Moves the slice one step clockwise on the wheel.")
+
 	ui.list = CreateFrame("Frame", nil, canvas)
 	ui.list:SetSize(LIST_W, ROW_H * ns.MAX_SLICES)
-	ui.list:SetPoint("TOPLEFT", listTitle, "BOTTOMLEFT", 0, -6)
+	ui.list:SetPoint("TOPLEFT", ui.add, "BOTTOMLEFT", 0, -8)
 	for i = 1, ns.MAX_SLICES do
 		createRow(i)
 	end
-
-	ui.add = button(canvas, "Add", 50)
-	ui.add:SetPoint("TOPLEFT", ui.list, "BOTTOMLEFT", 0, -6)
-	ui.remove = button(canvas, "Remove", 66)
-	ui.remove:SetPoint("LEFT", ui.add, "RIGHT", 4, 0)
-	ui.up = button(canvas, "Up", 42)
-	ui.up:SetPoint("LEFT", ui.remove, "RIGHT", 4, 0)
-	ui.down = button(canvas, "Down", 42)
-	ui.down:SetPoint("LEFT", ui.up, "RIGHT", 4, 0)
 
 	ui.add:SetScript("OnClick", function()
 		local list = slices()
@@ -426,6 +559,7 @@ local function build()
 		table.remove(list, selected)
 		selected = math.min(selected, #list)
 		ns.Changed() -- Refresh sees the draft belongs to a removed slice and reloads it
+		setStatus("Slice removed.")
 	end)
 	local function move(delta)
 		local list = slices()
@@ -438,52 +572,107 @@ local function build()
 	end
 	ui.up:SetScript("OnClick", function() move(-1) end)
 	ui.down:SetScript("OnClick", function() move(1) end)
+end
 
-	-- Editor
-	local ex = 16 + LIST_W + 28
-	ui.editorTitle = label(canvas, "", "GameFontNormalLarge")
-	ui.editorTitle:SetPoint("TOPLEFT", ex, -112)
-
-	local kindLabel = label(canvas, "Type", "GameFontHighlightSmall")
-	kindLabel:SetPoint("TOPLEFT", ui.editorTitle, "BOTTOMLEFT", 0, -14)
-	ui.kind = {}
-	local prevKind
-	for _, kind in ipairs(KINDS) do
-		local b = button(canvas, KIND_LABEL[kind], 80)
-		if prevKind then
-			b:SetPoint("LEFT", prevKind, "RIGHT", 4, 0)
-		else
-			b:SetPoint("LEFT", kindLabel, "RIGHT", 46, 0)
-		end
-		b:SetScript("OnClick", function()
-			switchKind(kind)
-			updateEditor()
-		end)
-		ui.kind[kind] = b
-		prevKind = b
+local function buildSuggestions()
+	local f = CreateFrame("Frame", nil, ui.card, "BackdropTemplate")
+	f:SetFrameLevel((ui.card:GetFrameLevel() or 0) + 20)
+	f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+	f:SetBackdropColor(0.06, 0.06, 0.08, 0.97)
+	f:SetBackdropBorderColor(1, 0.82, 0, 0.6)
+	f:SetPoint("TOPLEFT", ui.single, "BOTTOMLEFT", 0, -2)
+	f:SetPoint("TOPRIGHT", ui.single, "BOTTOMRIGHT", 0, -2)
+	f.rows = {}
+	for i = 1, SUGGEST_MAX do
+		local row = CreateFrame("Button", nil, f)
+		row:SetHeight(SUGGEST_ROW_H)
+		row:SetPoint("TOPLEFT", 1, -1 - (i - 1) * SUGGEST_ROW_H)
+		row:SetPoint("TOPRIGHT", -1, -1 - (i - 1) * SUGGEST_ROW_H)
+		row.sel = row:CreateTexture(nil, "BACKGROUND")
+		row.sel:SetAllPoints()
+		row.sel:SetColorTexture(1, 0.82, 0, 0.2)
+		row.sel:Hide()
+		local hover = row:CreateTexture(nil, "HIGHLIGHT")
+		hover:SetAllPoints()
+		hover:SetColorTexture(1, 1, 1, 0.08)
+		row.text = label(row, "", "GameFontHighlightSmall")
+		row.text:SetPoint("LEFT", 8, 0)
+		row.cmd = label(row, "", "GameFontDisableSmall")
+		row.cmd:SetPoint("RIGHT", -8, 0)
+		row:SetScript("OnClick", function(self) pickSuggestion(self.token) end)
+		f.rows[i] = row
 	end
+	f:Hide()
+	ui.suggest = f
+end
 
-	local actionLabel = label(canvas, "Action", "GameFontHighlightSmall")
-	actionLabel:SetPoint("TOPLEFT", kindLabel, "BOTTOMLEFT", 0, -22)
+local function buildEditor()
+	local card = ns.Widgets.Card(canvas)
+	card:SetPoint("TOPLEFT", ui.add, "TOPLEFT", LIST_W + 16, 0)
+	card:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
+	card:SetHeight(360) -- fits the worst case: macro box + three-line hint + label/icon + status
+	ui.card = card
 
-	-- Single-line box for emote/text.
-	ui.single = ns.Widgets.Input(canvas, 300, 255)
+	ui.editorTitle = label(card, "", "GameFontNormalLarge")
+	ui.editorTitle:SetPoint("TOPLEFT", 12, -12)
+	ui.unsaved = label(card, "Unsaved changes", "GameFontNormalSmall")
+	ui.unsaved:SetPoint("TOPRIGHT", -12, -15)
+	ui.unsaved:Hide()
+
+	-- Type
+	local kindLabel = label(card, "Type", "GameFontHighlightSmall")
+	kindLabel:SetPoint("TOPLEFT", 12, -50)
+	local items = {}
+	for _, kind in ipairs(KINDS) do
+		items[#items + 1] = { value = kind, text = KIND_LABEL[kind] }
+	end
+	ui.kindSwitch = ns.Widgets.Segmented(card, items, 222, function(kind)
+		switchKind(kind)
+		updateEditor()
+	end)
+	ui.kindSwitch:SetPoint("TOPLEFT", FIELD_X, -44)
+	ui.kind = ui.kindSwitch.buttons
+
+	-- Action
+	local actionLabel = label(card, "Action", "GameFontHighlightSmall")
+	actionLabel:SetPoint("TOPLEFT", 12, -86)
+
+	ui.single = ns.Widgets.Input(card, 200, 255)
 	ui.single.debugName = "action"
-	ui.single:SetPoint("LEFT", actionLabel, "RIGHT", 52, 0)
+	ui.single:SetPoint("TOPLEFT", FIELD_X, -80)
+	ui.single:SetPoint("RIGHT", card, "RIGHT", -12, 0)
 	ui.single:HookScript("OnTextChanged", function(self, userInput)
 		if userInput then
 			setDraftValue(self:GetText())
+			updateSuggestions()
 		end
 	end)
+	ui.single:HookScript("OnEditFocusGained", updateSuggestions)
+	ui.single:HookScript("OnEditFocusLost", function()
+		-- Clicking a suggestion takes focus first; keep the list until the click lands.
+		if not (ui.suggest and ui.suggest:IsMouseOver()) then hideSuggestions() end
+	end)
 	ui.single:SetScript("OnEnterPressed", function(self)
+		if ui.suggest:IsShown() and suggestIndex > 0 then
+			pickSuggestion(ui.suggest.rows[suggestIndex].token)
+			return
+		end
 		self:ClearFocus()
 		Panel.Save()
 	end)
+	ui.single:SetScript("OnTabPressed", function()
+		if ui.suggest:IsShown() and suggestIndex > 0 then
+			pickSuggestion(ui.suggest.rows[suggestIndex].token)
+		end
+	end)
+	ui.single:SetScript("OnArrowPressed", function(_, key)
+		if key == "DOWN" then moveSuggestion(1) elseif key == "UP" then moveSuggestion(-1) end
+	end)
 
-	-- Multi-line box for macros.
-	ui.multi = CreateFrame("Frame", nil, canvas, "BackdropTemplate")
-	ui.multi:SetSize(300, 84)
-	ui.multi:SetPoint("TOPLEFT", ui.single, "TOPLEFT", 0, 0)
+	ui.multi = CreateFrame("Frame", nil, card, "BackdropTemplate")
+	ui.multi:SetHeight(84)
+	ui.multi:SetPoint("TOPLEFT", FIELD_X, -80)
+	ui.multi:SetPoint("RIGHT", card, "RIGHT", -12, 0)
 	ui.multi:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
 	ui.multi:SetBackdropColor(0, 0, 0, 0.5)
 	ui.multi:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
@@ -497,6 +686,8 @@ local function build()
 	ui.multiBox:SetPoint("BOTTOMRIGHT", -6, 6)
 	ui.multi:SetScript("OnMouseDown", function() ui.multiBox:SetFocus() end)
 	ui.multiBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+	ui.multiBox:SetScript("OnEditFocusGained", function() ui.multi:SetBackdropBorderColor(1, 0.82, 0, 1) end)
+	ui.multiBox:SetScript("OnEditFocusLost", function() ui.multi:SetBackdropBorderColor(0.4, 0.4, 0.4, 1) end)
 	ui.multiBox:SetScript("OnTextChanged", function(self, userInput)
 		if userInput then
 			setDraftValue(self:GetText())
@@ -505,23 +696,24 @@ local function build()
 	end)
 	ns.Widgets.TraceInput(ui.multiBox, "macro")
 
-	ui.hint = label(canvas, "", "GameFontDisableSmall")
-	ui.hint:SetPoint("TOPLEFT", ui.multi, "BOTTOMLEFT", 6, -4)
-	ui.hint:SetWidth(300)
-	ui.counter = label(canvas, "", "GameFontDisableSmall")
-	ui.counter:SetPoint("TOPRIGHT", ui.multi, "BOTTOMRIGHT", 0, -4)
+	ui.hint = label(card, "", "GameFontDisableSmall")
+	ui.hint:SetPoint("TOPLEFT", ui.single, "BOTTOMLEFT", 0, -6) -- re-anchored in updateEditor
+	ui.hint:SetPoint("RIGHT", card, "RIGHT", -12, 0)
+	ui.counter = label(card, "", "GameFontDisableSmall")
+	ui.counter:SetPoint("BOTTOMRIGHT", ui.multi, "TOPRIGHT", 0, 3)
 
-	ui.save = button(canvas, "Save", 80)
-	ui.save:SetPoint("TOPLEFT", ui.multi, "BOTTOMLEFT", 0, -40) -- room for a two-line hint
+	-- Actions
+	ui.save = button(card, "Save", 80)
+	ui.save:SetPoint("TOPLEFT", ui.hint, "BOTTOMLEFT", 0, -10)
 	ui.save:SetScript("OnClick", function() Panel.Save() end)
-	ui.revert = button(canvas, "Revert", 80)
+	ui.revert = button(card, "Revert", 80)
 	ui.revert:SetPoint("LEFT", ui.save, "RIGHT", 4, 0)
 	ui.revert:SetScript("OnClick", function()
 		loadDraft()
 		updateEditor()
 		setStatus("")
 	end)
-	ui.test = button(canvas, "Test", 80)
+	ui.test = button(card, "Test", 70)
 	ui.test:SetPoint("LEFT", ui.revert, "RIGHT", 4, 0)
 	ui.test:SetScript("OnClick", function()
 		if isDirty() then
@@ -532,30 +724,47 @@ local function build()
 	end)
 	tooltip(ui.test, "Test", "Performs this emote/text slice now. Macro slices can only fire from the wheel.")
 
-	-- Label
-	local labelLabel = label(canvas, "Label", "GameFontHighlightSmall")
-	labelLabel:SetPoint("TOPLEFT", ui.save, "BOTTOMLEFT", 0, -22)
-	ui.labelBox = ns.Widgets.Input(canvas, 200, 40)
+	-- Status is pinned to the card's bottom edge so messages never shift the layout.
+	ui.status = label(card, "", "GameFontHighlightSmall")
+	ui.status:SetPoint("BOTTOMLEFT", 12, 10)
+	ui.status:SetPoint("RIGHT", card, "RIGHT", -12, 0)
+	ui.status:SetHeight(24)
+	ui.status:SetJustifyV("BOTTOM")
+
+	-- Look: label + icon
+	local divider = card:CreateTexture(nil, "ARTWORK")
+	divider:SetColorTexture(1, 1, 1, 0.08)
+	divider:SetHeight(1)
+	divider:SetPoint("TOPLEFT", ui.save, "BOTTOMLEFT", -FIELD_X + 12, -10)
+	divider:SetPoint("RIGHT", card, "RIGHT", -12, 0)
+
+	local labelLabel = label(card, "Label", "GameFontHighlightSmall")
+	labelLabel:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, -16)
+	ui.labelBox = ns.Widgets.Input(card, 180, 40)
 	ui.labelBox.debugName = "label"
-	ui.labelBox:SetPoint("LEFT", labelLabel, "RIGHT", 56, 0)
+	ui.labelBox:SetPoint("LEFT", labelLabel, "LEFT", FIELD_X - 12, 0)
 	ui.labelBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 	ui.labelBox:HookScript("OnEditFocusLost", commitLabel) -- Hook keeps the widget's focus styling
-	ui.labelHint = label(canvas, "", "GameFontDisableSmall")
-	ui.labelHint:SetPoint("TOPLEFT", ui.labelBox, "BOTTOMLEFT", 0, -2)
+	tooltip(ui.labelBox, "Label", "Name shown in the middle of the wheel. Leave empty to use the default (shown in grey).")
 
-	-- Icon
-	local iconLabel = label(canvas, "Icon", "GameFontHighlightSmall")
-	iconLabel:SetPoint("TOPLEFT", labelLabel, "BOTTOMLEFT", 0, -40)
-	ui.iconButton = CreateFrame("Button", nil, canvas)
-	ui.iconButton:SetSize(44, 44)
-	ui.iconButton:SetPoint("TOPLEFT", iconLabel, "TOPRIGHT", 62, 8)
+	local iconLabel = label(card, "Icon", "GameFontHighlightSmall")
+	iconLabel:SetPoint("TOPLEFT", labelLabel, "BOTTOMLEFT", 0, -28)
+	ui.iconButton = CreateFrame("Button", nil, card, "BackdropTemplate")
+	ui.iconButton:SetSize(36, 36)
+	ui.iconButton:SetPoint("LEFT", iconLabel, "LEFT", FIELD_X - 12, 0)
+	ui.iconButton:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+	ui.iconButton:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
 	ui.iconButton.icon = ui.iconButton:CreateTexture(nil, "ARTWORK")
-	ui.iconButton.icon:SetAllPoints()
-	ui.iconButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-	tooltip(ui.iconButton, "Change icon")
-	ui.iconButton:SetScript("OnClick", function(self)
+	ui.iconButton.icon:SetPoint("TOPLEFT", 1, -1)
+	ui.iconButton.icon:SetPoint("BOTTOMRIGHT", -1, 1)
+	ns.CropIcon(ui.iconButton.icon)
+	local iconHover = ui.iconButton:CreateTexture(nil, "HIGHLIGHT")
+	iconHover:SetAllPoints(ui.iconButton.icon)
+	iconHover:SetColorTexture(1, 1, 1, 0.15)
+
+	local function openPicker()
 		local s = slices()[selected]
-		ns.IconPicker.Open(self, ns.Slices.Icon(s), function(icon)
+		ns.IconPicker.Open(ui.iconButton, ns.Slices.Icon(s), function(icon)
 			local target = slices()[selected]
 			if target then
 				target.icon = icon
@@ -563,9 +772,14 @@ local function build()
 				setStatus(savedMessage())
 			end
 		end)
-	end)
-	ui.iconReset = button(canvas, "Default icon", 100)
-	ui.iconReset:SetPoint("LEFT", ui.iconButton, "RIGHT", 10, 0)
+	end
+	ui.iconButton:SetScript("OnClick", openPicker)
+	tooltip(ui.iconButton, "Change icon")
+	ui.iconChoose = button(card, "Choose...", 84)
+	ui.iconChoose:SetPoint("LEFT", ui.iconButton, "RIGHT", 10, 0)
+	ui.iconChoose:SetScript("OnClick", openPicker)
+	ui.iconReset = button(card, "Default", 70)
+	ui.iconReset:SetPoint("LEFT", ui.iconChoose, "RIGHT", 4, 0)
 	ui.iconReset:SetScript("OnClick", function()
 		local s = slices()[selected]
 		if s then
@@ -575,10 +789,15 @@ local function build()
 		end
 	end)
 
-	-- Status line
-	ui.status = label(canvas, "", "GameFontHighlightSmall")
-	ui.status:SetPoint("TOPLEFT", ui.add, "BOTTOMLEFT", 0, -12)
-	ui.status:SetPoint("RIGHT", canvas, "RIGHT", -16, 0)
+	buildSuggestions()
+end
+
+local function build()
+	built = true
+	buildHeader()
+	buildBindings()
+	buildList()
+	buildEditor()
 end
 
 ---------------------------------------------------------------------------
@@ -591,11 +810,14 @@ function Panel.Refresh()
 	for i, r in ipairs(rows) do
 		local s = list[i]
 		if s then
+			local has = ns.Slices.HasAction(s)
 			r.num:SetText(ns.Slices.KeyLabel(i))
 			r.icon:SetTexture(ns.Slices.Icon(s))
-			r.icon:SetDesaturated(not ns.Slices.HasAction(s))
-			r.text:SetText(ns.Slices.HasAction(s) and ns.Slices.Label(s) or "|cff888888(empty)|r")
+			r.icon:SetDesaturated(not has)
+			r.text:SetText(has and ns.Slices.Label(s) or "|cff888888(empty)|r")
+			r.kind:SetText(has and KIND_LABEL[s.kind] or "")
 			r.sel:SetShown(i == selected)
+			r.selBar:SetShown(i == selected)
 			r:Show()
 		else
 			r:Hide()
@@ -626,6 +848,7 @@ canvas:SetScript("OnShow", function()
 end)
 canvas:SetScript("OnHide", function()
 	settleDraft()
+	hideSuggestions()
 	ns.IconPicker.Close()
 end)
 
