@@ -193,6 +193,10 @@ end)
 add("debug", "debug - toggle debug output (prints secure vs skin slice on every fire)", function()
 	ns.debug = not ns.debug
 	Print("Debug " .. (ns.debug and "on" or "off") .. ".")
+	if ns.debug then
+		local action = GetBindingAction and GetBindingAction("BACKSPACE") or "?"
+		Print(("BACKSPACE is bound to: %s"):format(action ~= "" and action or "(nothing)"))
+	end
 end)
 
 local function help()

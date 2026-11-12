@@ -28,6 +28,8 @@ local function newObj(name)
   function m.CreateAnimationGroup(self) local g = newObj(); g.Play = function(gg) local f = gg.__scripts.OnFinished; if f then f(gg) end end; return g end
   function m.CreateAnimation() return newObj() end
   function m.RegisterEvent(self, e) end
+  function m.HookScript(self, k, f) local prev = self.__scripts[k]; self.__scripts[k] = function(...) if prev then prev(...) end f(...) end end
+  function m.EnableKeyboard(self, v) self.__kb = not not v end
   function m.SetText(self, t) self.__text = t end
   function m.GetText(self) return self.__text or '' end
   function m.SetShown(self, v) self.__shown = not not v end
@@ -40,7 +42,8 @@ local function newObj(name)
 end
 _G.newObj = newObj
 UIParent = newObj("UIParent")
-CreateFrame = function(_, name, _, _) local f = newObj(name); if name then _G[name] = f end; return f end
+__templates = {}
+CreateFrame = function(_, name, _, tmpl) if tmpl then __templates[tmpl] = (__templates[tmpl] or 0) + 1 end local f = newObj(name); if name then _G[name] = f end; return f end
 InCombatLockdown = function() return false end
 GetCursorPosition = function() return __cx or 500, __cy or 500 end
 GetTime = function() return __t or 0 end
@@ -219,6 +222,9 @@ ui.remove:Click()
 check(#ns.DB.Wheel().slices == 8, 'remove slice')
 
 -- keybind capture
+-- regression: an idle capture button must not be keyboard-enabled (it swallowed Backspace)
+check(not ui.bindWheel.__scripts.OnKeyDown and not ui.bindWheel.__kb, 'idle bind button has no key handler')
+check(not ui.bindRepeat.__scripts.OnKeyDown and not ui.bindRepeat.__kb, 'idle repeat button has no key handler')
 ui.bindWheel:Click('LeftButton')
 check(ui.bindWheel.capturing, 'capturing')
 __ctrl = true
@@ -231,6 +237,7 @@ ui.bindWheel:Click('LeftButton'); ui.bindWheel:Click('Button4')
 check(__binds['BUTTON4'] == 'CLICK JestWheelButton:LeftButton' and __binds['CTRL-Q'] == nil, 'rebinding to BUTTON4 clears old key')
 ui.bindWheel:Click('RightButton')
 check(GetBindingKey('CLICK JestWheelButton:LeftButton') == nil, 'right-click clears')
+check(not ui.bindWheel.__scripts.OnKeyDown and not ui.bindWheel.__kb, 'key handler removed after capture')
 
 -- appearance proxy settings
 __settings.JEST_RADIUS.set(150.4)
@@ -247,6 +254,10 @@ ns.Panel.Select(3)
 ui.single:SetText('bow'); ui.single.__scripts.OnTextChanged(ui.single, true); ui.save:Click()
 check(ui.status:GetText() == 'Saved. Applies when combat ends.', 'combat save message')
 InCombatLockdown = function() return false end
+
+-- regression: InputBoxTemplate swallows Backspace on Forever; it must not be used
+check(not __templates.InputBoxTemplate, 'no InputBoxTemplate edit boxes')
+check(ui.labelBox.__scripts.OnEditFocusLost ~= nil, 'label box keeps focus-lost handler')
 
 -- regression: flicking Emote -> Text -> Macro -> Emote must not lose the saved action
 ns.Panel.Select(5)

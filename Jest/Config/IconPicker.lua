@@ -158,10 +158,9 @@ local function create()
 	manualLabel:SetPoint("TOPLEFT", 18, gridBottom - 36)
 	manualLabel:SetText("Or type an icon name, path or file ID:")
 
-	manualBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-	manualBox:SetSize(260, 20)
-	manualBox:SetPoint("TOPLEFT", manualLabel, "BOTTOMLEFT", 4, -4)
-	manualBox:SetAutoFocus(false)
+	manualBox = ns.Widgets.Input(frame, 260)
+	manualBox.debugName = "iconName"
+	manualBox:SetPoint("TOPLEFT", manualLabel, "BOTTOMLEFT", 0, -4)
 
 	local use = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 	use:SetSize(70, 22)

@@ -19,6 +19,7 @@ UI\Geometry.lua
 Secure\Snippets.lua
 Secure\SecureWheel.lua
 UI\Skin.lua
+Config\Widgets.lua
 Config\IconPicker.lua
 Config\Panel.lua
 Config\Slash.lua

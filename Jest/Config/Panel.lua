@@ -107,11 +107,25 @@ local function createBindButton(parent, command)
 		self:SetText(key and keyText(key) or "|cff888888Not bound|r")
 	end
 
+	-- IMPORTANT: the OnKeyDown handler exists only while capturing. Setting an OnKeyDown script
+	-- turns keyboard input on for the frame, and a permanently keyboard-enabled button here
+	-- swallowed Backspace from the panel's text boxes.
+	local onKeyDown
+
 	local function stop(self)
 		self.capturing = false
+		self:SetScript("OnKeyDown", nil)
 		self:EnableKeyboard(false)
 		self:UnlockHighlight()
 		self:Refresh()
+	end
+
+	local function start(self)
+		self.capturing = true
+		self:LockHighlight()
+		self:SetText("Press a key...")
+		self:SetScript("OnKeyDown", onKeyDown)
+		self:EnableKeyboard(true)
 	end
 
 	local function assign(self, key)
@@ -158,20 +172,18 @@ local function createBindButton(parent, command)
 			setStatus("Key cleared.")
 			return
 		end
-		self.capturing = true
-		self:LockHighlight()
-		self:SetText("Press a key...")
-		self:EnableKeyboard(true)
+		start(self)
 	end)
 
-	b:SetScript("OnKeyDown", function(self, key)
+	onKeyDown = function(self, key)
 		if not self.capturing or MODIFIER_KEYS[key] then return end
 		if key == "ESCAPE" then
 			stop(self)
 			return
 		end
 		assign(self, modifierPrefix() .. key)
-	end)
+	end
+	b:EnableKeyboard(false)
 
 	b:SetScript("OnHide", function(self)
 		if self.capturing then stop(self) end
@@ -293,6 +305,7 @@ local function updateEditor()
 	ui.multi:SetShown(isMacro)
 	local box = isMacro and ui.multiBox or ui.single
 	if box:GetText() ~= value then
+		ns.Debug(("[panel] updateEditor rewrites %s: %q -> %q"):format(box.debugName or "?", box:GetText(), value))
 		box:SetText(value)
 	end
 
@@ -304,7 +317,10 @@ local function updateEditor()
 	ui.hint:SetText(hint)
 	ui.counter:SetText(isMacro and ("%d/%d"):format(#value, ns.Slices.MACRO_MAX) or "")
 
-	ui.labelBox:SetText(s.label or "")
+	if ui.labelBox:GetText() ~= (s.label or "") then
+		ns.Debug(("[panel] updateEditor rewrites label: %q -> %q"):format(ui.labelBox:GetText(), s.label or ""))
+		ui.labelBox:SetText(s.label or "")
+	end
 	ui.labelHint:SetText(("Empty uses \"%s\""):format(ns.Slices.Label({ kind = s.kind, value = s.value })))
 	ui.iconButton.icon:SetTexture(ns.Slices.Icon(s))
 	ui.iconReset:SetEnabled(s.icon ~= nil)
@@ -451,12 +467,10 @@ local function build()
 	actionLabel:SetPoint("TOPLEFT", kindLabel, "BOTTOMLEFT", 0, -22)
 
 	-- Single-line box for emote/text.
-	ui.single = CreateFrame("EditBox", nil, canvas, "InputBoxTemplate")
-	ui.single:SetSize(300, 20)
+	ui.single = ns.Widgets.Input(canvas, 300, 255)
+	ui.single.debugName = "action"
 	ui.single:SetPoint("LEFT", actionLabel, "RIGHT", 52, 0)
-	ui.single:SetAutoFocus(false)
-	ui.single:SetMaxLetters(255)
-	ui.single:SetScript("OnTextChanged", function(self, userInput)
+	ui.single:HookScript("OnTextChanged", function(self, userInput)
 		if userInput then
 			setDraftValue(self:GetText())
 		end
@@ -469,7 +483,7 @@ local function build()
 	-- Multi-line box for macros.
 	ui.multi = CreateFrame("Frame", nil, canvas, "BackdropTemplate")
 	ui.multi:SetSize(300, 84)
-	ui.multi:SetPoint("TOPLEFT", ui.single, "TOPLEFT", -6, 4)
+	ui.multi:SetPoint("TOPLEFT", ui.single, "TOPLEFT", 0, 0)
 	ui.multi:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
 	ui.multi:SetBackdropColor(0, 0, 0, 0.5)
 	ui.multi:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
@@ -489,6 +503,7 @@ local function build()
 			ui.counter:SetText(("%d/%d"):format(#draftValue(), ns.Slices.MACRO_MAX))
 		end
 	end)
+	ns.Widgets.TraceInput(ui.multiBox, "macro")
 
 	ui.hint = label(canvas, "", "GameFontDisableSmall")
 	ui.hint:SetPoint("TOPLEFT", ui.multi, "BOTTOMLEFT", 6, -4)
@@ -520,15 +535,13 @@ local function build()
 	-- Label
 	local labelLabel = label(canvas, "Label", "GameFontHighlightSmall")
 	labelLabel:SetPoint("TOPLEFT", ui.save, "BOTTOMLEFT", 0, -22)
-	ui.labelBox = CreateFrame("EditBox", nil, canvas, "InputBoxTemplate")
-	ui.labelBox:SetSize(200, 20)
+	ui.labelBox = ns.Widgets.Input(canvas, 200, 40)
+	ui.labelBox.debugName = "label"
 	ui.labelBox:SetPoint("LEFT", labelLabel, "RIGHT", 56, 0)
-	ui.labelBox:SetAutoFocus(false)
-	ui.labelBox:SetMaxLetters(40)
 	ui.labelBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-	ui.labelBox:SetScript("OnEditFocusLost", commitLabel)
+	ui.labelBox:HookScript("OnEditFocusLost", commitLabel) -- Hook keeps the widget's focus styling
 	ui.labelHint = label(canvas, "", "GameFontDisableSmall")
-	ui.labelHint:SetPoint("TOPLEFT", ui.labelBox, "BOTTOMLEFT", -4, -2)
+	ui.labelHint:SetPoint("TOPLEFT", ui.labelBox, "BOTTOMLEFT", 0, -2)
 
 	-- Icon
 	local iconLabel = label(canvas, "Icon", "GameFontHighlightSmall")
