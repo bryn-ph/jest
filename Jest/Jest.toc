@@ -16,6 +16,7 @@ Core\DB.lua
 Core\Emotes.lua
 Core\Slices.lua
 UI\Geometry.lua
+UI\WheelView.lua
 Secure\Snippets.lua
 Secure\SecureWheel.lua
 UI\Skin.lua

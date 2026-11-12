@@ -37,6 +37,7 @@ local function newObj(name)
   function m.ClearFocus(self) self.__focus = false end
   function m.HasFocus(self) return self.__focus == true end
   function m.SetTexCoord(self, ...) __texcoords = __texcoords or {}; __texcoords[self] = { ... } end
+  function m.GetCenter(self) return self.__cx or 300, self.__cy or 300 end
   function m.SetText(self, t) self.__text = t end
   function m.GetText(self) return self.__text or '' end
   function m.SetShown(self, v) self.__shown = not not v end
@@ -259,8 +260,46 @@ check(picker.__shown, 'picker reopen')
 ui.add:Click()
 check(#ns.DB.Wheel().slices == 9, 'add slice')
 check(ui.editorTitle:GetText() == 'Slice 9', 'selects new slice')
-ui.up:Click()
-check(ui.editorTitle:GetText() == 'Slice 8', 'move up follows selection')
+-- preview wheel reflects the slices
+local pv = ui.preview
+check(pv.n == 9, 'preview shows 9 slices')
+check(pv.slots[1].iconTexture == ns.Slices.Icon(ns.DB.Wheel().slices[1]), 'preview slot icon matches slice')
+check(pv.highlighted == 9 and pv.emphasis == 9, 'preview highlights the selected slice')
+check(pv.centreLabel:GetText() == 'Empty', 'preview centre shows selected (empty) slice')
+-- drag slice 9 onto slice 8 (8 of 9 sits at 280 deg: left and slightly up of centre)
+pv.frame.__cx, pv.frame.__cy = 300, 300
+local slice8 = ns.DB.Wheel().slices[8]
+__t = 50
+pv.slots[9].__scripts.OnDragStart(pv.slots[9])
+check(ui.ghost.__shown, 'drag ghost shown')
+check(pv.slots[9].__alpha == 0.35, 'dragged slot dimmed')
+__cx, __cy = 300 - 87, 300 + 15
+pv.frame.__scripts.OnUpdate(pv.frame, 0.016)
+check(pv.highlighted == 8, 'drop target highlighted, got ' .. tostring(pv.highlighted))
+check(pv.centreLabel:GetText() == 'Swap here', 'centre explains the drop')
+pv.slots[9].__scripts.OnDragStop(pv.slots[9])
+check(not ui.ghost.__shown, 'ghost hidden after drop')
+check(ns.DB.Wheel().slices[9] == slice8 and ns.DB.Wheel().slices[8].value == '', 'slices 8 and 9 swapped')
+check(ui.editorTitle:GetText() == 'Slice 8', 'selection follows the dragged slice')
+check(ui.status:GetText() == 'Swapped slices 9 and 8.', 'swap status, got ' .. ui.status:GetText())
+-- the click that can follow a drag is ignored
+pv.slots[3].__scripts.OnClick(pv.slots[3])
+check(ui.editorTitle:GetText() == 'Slice 8', 'click right after drag ignored')
+__t = 51
+-- dropping in the centre cancels
+local before = ns.DB.Wheel().slices[2]
+pv.slots[2].__scripts.OnDragStart(pv.slots[2])
+__cx, __cy = 300, 300
+pv.frame.__scripts.OnUpdate(pv.frame, 0.016)
+check(pv.centreLabel:GetText() == 'Cancel', 'centre says cancel over the dead zone')
+pv.slots[2].__scripts.OnDragStop(pv.slots[2])
+check(ns.DB.Wheel().slices[2] == before, 'drop in centre changes nothing')
+check(pv.highlighted == 8, 'highlight returns to the selection')
+-- clicking a slice selects it
+__t = 52
+pv.slots[3].__scripts.OnClick(pv.slots[3])
+check(ui.editorTitle:GetText() == 'Slice 3', 'click selects slice')
+ns.Panel.Select(8)
 ui.remove:Click()
 check(#ns.DB.Wheel().slices == 8, 'remove slice')
 

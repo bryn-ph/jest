@@ -8,8 +8,10 @@ local addonName, ns = ...
 local Panel = {}
 ns.Panel = Panel
 
-local ROW_H = 24
-local LIST_W = 220
+-- Preview wheel (a WheelView, the same drawing code as the in-game wheel), scaled down.
+local PREVIEW = { radius = 88, deadZone = 22, iconSize = 30, centreIconSize = 26 }
+local COLUMN_W = 2 * (PREVIEW.radius + PREVIEW.iconSize)
+local CLICK_AFTER_DRAG = 0.2 -- ignore the click that some clients send right after a drag ends
 local LEFT = 16          -- canvas left padding
 local FIELD_X = 70       -- x of input controls inside the editor card
 local SUGGEST_MAX = 8
@@ -31,7 +33,6 @@ canvas:Hide()
 local category
 local built = false
 local ui = {}
-local rows = {}
 Panel._ui = ui -- exposed for tests/debugging (/dump)
 local selected = 1
 -- Unsaved edits for the selected slice. `values` holds one draft per kind, so flicking between
@@ -211,67 +212,6 @@ local function createBindButton(parent, command)
 
 	tooltip(b, "Key binding", "Click, then press a key. Modifiers and middle/side mouse buttons work. Right-click to clear; Esc cancels.")
 	return b
-end
-
----------------------------------------------------------------------------
--- Slice list
----------------------------------------------------------------------------
-local function rowTooltip(r)
-	local s = slices()[r.index]
-	if not s then return end
-	GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
-	GameTooltip:SetText(ns.Slices.HasAction(s) and ns.Slices.Label(s) or "Empty slice", 1, 1, 1)
-	if ns.Slices.HasAction(s) then
-		GameTooltip:AddLine(KIND_LABEL[s.kind] .. ": " .. s.value, 0.8, 0.8, 0.8, true)
-	end
-	local key = ns.Slices.KeyLabel(r.index)
-	if key ~= "" then
-		GameTooltip:AddLine("Press " .. key .. " while the wheel is open to fire it.", 0.5, 0.5, 0.5, true)
-	end
-	GameTooltip:Show()
-end
-
-local function createRow(i)
-	local r = CreateFrame("Button", nil, ui.list)
-	r.index = i
-	r:SetSize(LIST_W, ROW_H - 2)
-	r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
-
-	r.bg = r:CreateTexture(nil, "BACKGROUND")
-	r.bg:SetAllPoints()
-	r.bg:SetColorTexture(1, 1, 1, 0.04)
-	r.sel = r:CreateTexture(nil, "BORDER")
-	r.sel:SetAllPoints()
-	r.sel:SetColorTexture(1, 0.82, 0, 0.2)
-	r.sel:Hide()
-	r.selBar = r:CreateTexture(nil, "ARTWORK")
-	r.selBar:SetColorTexture(1, 0.82, 0, 0.9)
-	r.selBar:SetWidth(2)
-	r.selBar:SetPoint("TOPLEFT")
-	r.selBar:SetPoint("BOTTOMLEFT")
-	r.selBar:Hide()
-	local hover = r:CreateTexture(nil, "HIGHLIGHT")
-	hover:SetAllPoints()
-	hover:SetColorTexture(1, 1, 1, 0.07)
-
-	r.num = label(r, "", "GameFontDisableSmall")
-	r.num:SetPoint("LEFT", 8, 0)
-	r.icon = r:CreateTexture(nil, "ARTWORK")
-	r.icon:SetSize(18, 18)
-	r.icon:SetPoint("LEFT", 22, 0)
-	ns.CropIcon(r.icon)
-	r.kind = label(r, "", "GameFontDisableSmall")
-	r.kind:SetPoint("RIGHT", -8, 0)
-	r.text = label(r, "", "GameFontHighlight")
-	r.text:SetPoint("LEFT", r.icon, "RIGHT", 8, 0)
-	r.text:SetPoint("RIGHT", r.kind, "LEFT", -6, 0)
-	r.text:SetWordWrap(false)
-
-	r:SetScript("OnClick", function() Panel.Select(i) end)
-	r:SetScript("OnEnter", rowTooltip)
-	r:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	rows[i] = r
-	return r
 end
 
 ---------------------------------------------------------------------------
@@ -483,6 +423,107 @@ local function commitLabel()
 end
 
 ---------------------------------------------------------------------------
+-- Preview wheel: click a slice to edit it, drag it onto another slice to swap them
+---------------------------------------------------------------------------
+local drag          -- { from = i, target = j } while a slice is being dragged
+local lastDragEnd = 0
+
+local function showSelectedInCentre()
+	local s = ui.preview.slots[selected]
+	if s and not s.empty then
+		ui.preview:SetCentre(s.iconTexture, s.label)
+	else
+		ui.preview:SetCentre(nil, "Empty", true)
+	end
+end
+
+local function slotTooltip(slot)
+	if drag then return end
+	local s = slices()[slot.index]
+	if not s then return end
+	GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
+	GameTooltip:SetText(ns.Slices.HasAction(s) and ns.Slices.Label(s) or "Empty slice", 1, 1, 1)
+	if ns.Slices.HasAction(s) then
+		GameTooltip:AddLine(KIND_LABEL[s.kind] .. ": " .. s.value, 0.8, 0.8, 0.8, true)
+	end
+	local key = ns.Slices.KeyLabel(slot.index)
+	if key ~= "" then
+		GameTooltip:AddLine("Press " .. key .. " while the wheel is open to fire it.", 0.5, 0.5, 0.5, true)
+	end
+	GameTooltip:AddLine("Click to edit. Drag onto another slice to swap.", 0.5, 0.5, 0.5, true)
+	GameTooltip:Show()
+end
+
+-- Cursor offset from the preview's centre, in the preview's own units.
+local function previewCursorOffset()
+	local f = ui.preview.frame
+	local scale = f:GetEffectiveScale()
+	local x, y = GetCursorPosition()
+	local cx, cy = f:GetCenter()
+	if not cx then return 0, 0 end
+	return x / scale - cx, y / scale - cy
+end
+
+-- Slice under the cursor while dragging (same angle maths as the real wheel), or nil when the
+-- cursor is in the centre or far outside the preview.
+local function dropTarget()
+	local dx, dy = previewCursorOffset()
+	if dx * dx + dy * dy > COLUMN_W * COLUMN_W then return nil end
+	return ns.Geometry.SliceAt(dx, dy, ui.preview.n, PREVIEW.deadZone)
+end
+
+local function updateDrag()
+	local target = dropTarget()
+	if target == drag.from then target = nil end
+	if target ~= drag.target or drag.first then
+		drag.first = nil
+		drag.target = target
+		ui.preview:SetHighlight(target)
+		ui.preview:SetEmphasis(target)
+		if target then
+			local t = ui.preview.slots[target]
+			ui.preview:SetCentre(t.iconTexture, "Swap here")
+		else
+			ui.preview:SetCentre(nil, "Cancel", true)
+		end
+	end
+	local scale = UIParent:GetEffectiveScale()
+	local x, y = GetCursorPosition()
+	ui.ghost:ClearAllPoints()
+	ui.ghost:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+end
+
+local function startDrag(slot)
+	settleDraft() -- slice indices are about to change
+	GameTooltip:Hide()
+	drag = { from = slot.index, first = true }
+	slot:SetAlpha(0.35)
+	ui.ghost.icon:SetTexture(slot.iconTexture)
+	ui.ghost:Show()
+	updateDrag()
+end
+
+local function endDrag(cancel)
+	if not drag then return end
+	local from = drag.from
+	local target = not cancel and dropTarget() or nil
+	drag = nil
+	lastDragEnd = GetTime()
+	ui.ghost:Hide()
+	local s = ui.preview.slots[from]
+	if s then s:SetAlpha(1) end
+	if target and target ~= from then
+		local list = slices()
+		list[from], list[target] = list[target], list[from]
+		selected = target
+		ns.Changed() -- refreshes the panel and the in-game wheel
+		setStatus(("Swapped slices %d and %d."):format(from, target))
+	else
+		Panel.Refresh() -- put the highlight back on the selection
+	end
+end
+
+---------------------------------------------------------------------------
 -- Build
 ---------------------------------------------------------------------------
 local function buildHeader()
@@ -515,28 +556,59 @@ local function buildBindings()
 	hint:SetPoint("TOPLEFT", wheelLabel, "BOTTOMLEFT", 0, -12)
 end
 
-local function buildList()
-	local header = ns.Widgets.Header(canvas, "Slices  |cff888888clockwise from the top|r")
+local function buildPreview()
+	local header = ns.Widgets.Header(canvas, "Slices  |cff888888click to edit, drag to rearrange|r")
 	header:SetPoint("TOPLEFT", LEFT, -168)
 
-	-- Toolbar above the list so it never moves as slices are added/removed.
-	ui.add = button(canvas, "Add", 54)
+	ui.add = button(canvas, "Add slice", 90)
 	ui.add:SetPoint("TOPLEFT", LEFT, -190)
-	ui.remove = button(canvas, "Remove", 70)
+	ui.remove = button(canvas, "Remove", 80)
 	ui.remove:SetPoint("LEFT", ui.add, "RIGHT", 4, 0)
-	ui.up = button(canvas, "Up", 44)
-	ui.up:SetPoint("LEFT", ui.remove, "RIGHT", 4, 0)
-	ui.down = button(canvas, "Down", 44)
-	ui.down:SetPoint("LEFT", ui.up, "RIGHT", 4, 0)
-	tooltip(ui.up, "Move up", "Moves the slice one step anticlockwise on the wheel.")
-	tooltip(ui.down, "Move down", "Moves the slice one step clockwise on the wheel.")
+	tooltip(ui.remove, "Remove", "Deletes the selected slice. The slices after it move up one place.")
 
-	ui.list = CreateFrame("Frame", nil, canvas)
-	ui.list:SetSize(LIST_W, ROW_H * ns.MAX_SLICES)
-	ui.list:SetPoint("TOPLEFT", ui.add, "BOTTOMLEFT", 0, -8)
-	for i = 1, ns.MAX_SLICES do
-		createRow(i)
-	end
+	ui.preview = ns.WheelView.Create(canvas, {
+		interactive = true,
+		labelFont = "GameFontHighlightSmall",
+		onSlotCreated = function(slot)
+			slot:RegisterForClicks("LeftButtonUp")
+			slot:RegisterForDrag("LeftButton")
+			slot:SetScript("OnClick", function(self)
+				if GetTime() - lastDragEnd < CLICK_AFTER_DRAG then return end
+				Panel.Select(self.index)
+			end)
+			slot:SetScript("OnDragStart", startDrag)
+			slot:SetScript("OnDragStop", function() endDrag() end)
+			slot:SetScript("OnEnter", slotTooltip)
+			slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
+		end,
+	})
+	local pf = ui.preview.frame
+	pf:SetPoint("TOPLEFT", ui.add, "BOTTOMLEFT", 0, -10)
+	ui.preview.centreLabel:SetWidth(84)
+	pf:SetScript("OnUpdate", function(_, elapsed)
+		if drag then updateDrag() end
+		ui.preview:Update(elapsed)
+	end)
+
+	-- The icon that follows the cursor while dragging.
+	local ghost = CreateFrame("Frame", nil, UIParent)
+	ghost:SetFrameStrata("TOOLTIP")
+	ghost:SetSize(PREVIEW.iconSize + 4, PREVIEW.iconSize + 4)
+	local ring = ghost:CreateTexture(nil, "BORDER")
+	ring:SetColorTexture(1, 0.82, 0, 1)
+	ring:SetAllPoints()
+	ns.WheelView.AddCircleMask(ghost, ring)
+	ghost.icon = ghost:CreateTexture(nil, "ARTWORK")
+	ghost.icon:SetPoint("TOPLEFT", 2, -2)
+	ghost.icon:SetPoint("BOTTOMRIGHT", -2, 2)
+	ns.CropIcon(ghost.icon)
+	ns.WheelView.AddCircleMask(ghost, ghost.icon)
+	ghost:Hide()
+	ui.ghost = ghost
+
+	local hint = label(canvas, "Slice 1 is at the top; the rest follow clockwise. The numbers are the keys that fire each slice while the wheel is open.", "GameFontDisableSmall")
+	hint:SetPoint("TOPLEFT", pf, "BOTTOMLEFT", 0, -6)
+	hint:SetWidth(COLUMN_W)
 
 	ui.add:SetScript("OnClick", function()
 		local list = slices()
@@ -561,17 +633,6 @@ local function buildList()
 		ns.Changed() -- Refresh sees the draft belongs to a removed slice and reloads it
 		setStatus("Slice removed.")
 	end)
-	local function move(delta)
-		local list = slices()
-		local target = selected + delta
-		if target < 1 or target > #list then return end
-		settleDraft()
-		list[selected], list[target] = list[target], list[selected]
-		selected = target
-		ns.Changed()
-	end
-	ui.up:SetScript("OnClick", function() move(-1) end)
-	ui.down:SetScript("OnClick", function() move(1) end)
 end
 
 local function buildSuggestions()
@@ -608,7 +669,7 @@ end
 
 local function buildEditor()
 	local card = ns.Widgets.Card(canvas)
-	card:SetPoint("TOPLEFT", ui.add, "TOPLEFT", LIST_W + 16, 0)
+	card:SetPoint("TOPLEFT", ui.add, "TOPLEFT", COLUMN_W + 20, 0)
 	card:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
 	card:SetHeight(360) -- fits the worst case: macro box + three-line hint + label/icon + status
 	ui.card = card
@@ -796,7 +857,7 @@ local function build()
 	built = true
 	buildHeader()
 	buildBindings()
-	buildList()
+	buildPreview()
 	buildEditor()
 end
 
@@ -807,26 +868,17 @@ function Panel.Refresh()
 	if not built then return end
 	local list = slices()
 	selected = math.max(1, math.min(selected, #list))
-	for i, r in ipairs(rows) do
-		local s = list[i]
-		if s then
-			local has = ns.Slices.HasAction(s)
-			r.num:SetText(ns.Slices.KeyLabel(i))
-			r.icon:SetTexture(ns.Slices.Icon(s))
-			r.icon:SetDesaturated(not has)
-			r.text:SetText(has and ns.Slices.Label(s) or "|cff888888(empty)|r")
-			r.kind:SetText(has and KIND_LABEL[s.kind] or "")
-			r.sel:SetShown(i == selected)
-			r.selBar:SetShown(i == selected)
-			r:Show()
-		else
-			r:Hide()
+	if not drag then
+		ui.preview:Layout(list, PREVIEW)
+		for i = 1, #list do
+			ui.preview.slots[i]:SetAlpha(1)
 		end
+		ui.preview:SetEmphasis(selected)
+		ui.preview:SetHighlight(selected) -- eases from the previous selection
+		showSelectedInCentre()
 	end
 	ui.add:SetEnabled(#list < ns.MAX_SLICES)
 	ui.remove:SetEnabled(#list > 1)
-	ui.up:SetEnabled(selected > 1)
-	ui.down:SetEnabled(selected < #list)
 	ui.bindWheel:Refresh()
 	ui.bindRepeat:Refresh()
 	-- Reload the draft unless it holds unsaved edits for the slice still selected.
@@ -847,6 +899,7 @@ canvas:SetScript("OnShow", function()
 	Panel.Refresh()
 end)
 canvas:SetScript("OnHide", function()
+	endDrag(true)
 	settleDraft()
 	hideSuggestions()
 	ns.IconPicker.Close()
