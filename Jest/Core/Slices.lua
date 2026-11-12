@@ -34,6 +34,46 @@ function Slices.Label(s)
 	return "Empty"
 end
 
+local function trim(s)
+	return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- Normalise and validate user input for a slice. Returns the value to store, or nil + error.
+function Slices.Validate(kind, value)
+	value = trim(value or "")
+	if value == "" then
+		return nil, "Enter something for this slice to do."
+	end
+	if kind == "emote" then
+		local token = ns.Emotes.Resolve(value)
+		if not token then
+			return nil, ("Unknown emote '%s'. Try /jest emotes to list them."):format(value)
+		end
+		return token
+	elseif kind == "text" then
+		value = value:gsub("[\r\n]+", " ")
+		if #value > 255 then
+			return nil, ("Text is %d characters; the limit is 255."):format(#value)
+		end
+		return value
+	elseif kind == "macro" then
+		if #value > Slices.MACRO_MAX then
+			return nil, ("Macro is %d characters; the limit is %d."):format(#value, Slices.MACRO_MAX)
+		end
+		return value
+	end
+	return nil, "Kind must be emote, text or macro."
+end
+
+-- "134400" -> 134400, "Spell_Nature_Polymorph" -> "Interface\\Icons\\Spell_Nature_Polymorph", paths unchanged.
+function Slices.ParseIcon(text)
+	text = trim(text or "")
+	if text == "" then return nil end
+	if tonumber(text) then return tonumber(text) end
+	if text:find("[\\/]") then return text end
+	return "Interface\\Icons\\" .. text
+end
+
 -- Key shown on each slice while the wheel is open (1-9, then 0 for slice 10).
 function Slices.KeyLabel(i)
 	if i <= 9 then return tostring(i) end

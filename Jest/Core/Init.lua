@@ -39,9 +39,31 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 	end
 end)
 
+-- Config change notification: every editor (slash, settings panel) calls ns.Changed() after
+-- writing to the DB. It pushes the config to the secure wheel (queued in combat) and lets open
+-- UIs refresh themselves.
+local changeListeners = {}
+
+function ns.OnChanged(fn)
+	table.insert(changeListeners, fn)
+end
+
+function ns.Changed()
+	ns.SecureWheel.Apply()
+	for _, fn in ipairs(changeListeners) do
+		fn()
+	end
+end
+
 -- All files are loaded by the time ADDON_LOADED fires for us, and SavedVariables are available.
 ns.On("ADDON_LOADED", function(_, name)
 	if name ~= addonName then return end
 	ns.DB.Init()
+	ns.Panel.Register()
 	ns.SecureWheel.Apply()
 end)
+
+-- TOC `AddonCompartmentFunc`: entry in the minimap addon compartment menu.
+function Jest_OnAddonCompartmentClick()
+	ns.Panel.Open()
+end
