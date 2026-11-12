@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime.version": "Lua 5.1",
+  "workspace.library": [],
+  "diagnostics.globals": [
+    "JestDB",
+    "JestCharDB",
+    "BINDING_HEADER_JEST",
+    "SLASH_JEST1",
+    "SLASH_JEST2"
+  ]
+}

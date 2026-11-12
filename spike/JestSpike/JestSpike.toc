@@ -1,0 +1,6 @@
+## Interface: 16001
+## Title: JestSpike
+## Notes: Throwaway feasibility spike for the Jest emote wheel. Delete after testing.
+## Version: 0.0.1
+
+JestSpike.lua

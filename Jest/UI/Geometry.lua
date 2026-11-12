@@ -1,0 +1,28 @@
+-- Pure wheel geometry. No WoW API calls, so it can be unit-tested outside the game.
+--
+-- !!! SliceAt MUST stay identical to the math in Secure/Snippets.lua. The secure copy decides
+-- what fires; this copy drives the highlight. If they disagree the wheel feels broken.
+-- `/jest debug` prints both indices on every fire to catch drift.
+local _, ns = ...
+
+local Geometry = {}
+if ns then ns.Geometry = Geometry end
+
+local atan2, deg, rad, floor, sin, cos = math.atan2, math.deg, math.rad, math.floor, math.sin, math.cos
+
+-- dx, dy: cursor offset from the wheel centre (y up). Returns slice index 1..n, or nil in the dead zone.
+-- Slice 1 is centred at 12 o'clock; indices increase clockwise.
+function Geometry.SliceAt(dx, dy, n, deadZone)
+	if n < 1 or dx * dx + dy * dy < deadZone * deadZone then return nil end
+	local a = (90 - deg(atan2(dy, dx))) % 360
+	local step = 360 / n
+	return floor((a + step / 2) / step) % n + 1
+end
+
+-- Centre of slice i as an (x, y) offset from the wheel centre.
+function Geometry.SlicePosition(i, n, radius)
+	local a = rad((i - 1) * 360 / n)
+	return radius * sin(a), radius * cos(a)
+end
+
+return Geometry

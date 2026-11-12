@@ -1,0 +1,20 @@
+## Interface: 16001
+## Title: Jest
+## Notes: Hold-to-open radial emote wheel. Hold the key, flick toward an emote, release.
+## Author: bryn-ph
+## Version: 0.1.0
+## SavedVariables: JestDB
+## SavedVariablesPerCharacter: JestCharDB
+
+# Bindings.xml is auto-loaded by the client and must not be listed here.
+
+Core\Init.lua
+Core\Defaults.lua
+Core\DB.lua
+Core\Emotes.lua
+Core\Slices.lua
+UI\Geometry.lua
+Secure\Snippets.lua
+Secure\SecureWheel.lua
+UI\Skin.lua
+Config\Slash.lua
