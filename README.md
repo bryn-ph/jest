@@ -23,7 +23,17 @@ Bind **Open emote wheel (hold)** and **Repeat last emote** under *Options → Ke
 | `Esc` while open | Cancels |
 | Repeat key | Re-fires the last slice, without opening the wheel |
 
-Configure it with `/jest` (alias `/ew`). Run `/jest` alone to list every command. For example:
+### Options panel
+Open it with `/jest` (alias `/ew`), from *Options → AddOns → Jest*, or from the minimap addon-compartment menu.
+- **Jest page:**
+  - Set the wheel key and the repeat key: click the button, then press a key. Right-click clears it.
+  - Edit the slices: pick a type (Emote, Text or Macro), type the action and click Save (Enter also saves emote and text slices).
+  - Optionally set a label and choose an icon from the picker.
+  - Add, Remove, and Up/Down to reorder. Test performs an emote or text slice immediately.
+- **Appearance page:** ring radius, cancel-zone size, wheel scale and sounds.
+
+### Slash commands
+`/jest help` lists every command. For example:
 
 ```
 /jest list
@@ -43,6 +53,8 @@ Edits made in combat are queued and apply when combat ends.
 | `Jest/UI/Skin.lua` | Visuals, highlight, animation and sound. Insecure and advisory only. |
 | `Jest/UI/Geometry.lua` | Slice math. It **must** match the copy in `Secure/Snippets.lua`. |
 | `Jest/Core/` | Namespace, SavedVariables and profiles, emote discovery, slice helpers |
+| `Jest/Config/Panel.lua` | Options panel (Settings API): key capture, slice editor, Appearance sliders |
+| `Jest/Config/IconPicker.lua` | Icon picker popup |
 | `Jest/Config/Slash.lua` | `/jest` commands |
 | `spike/` | The original feasibility spike, kept for reference |
 

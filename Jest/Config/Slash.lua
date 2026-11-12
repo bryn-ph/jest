@@ -1,4 +1,4 @@
--- /jest and /ew slash commands (the MVP config UI; a Settings panel comes in v1).
+-- /jest and /ew slash commands. `/jest` alone opens the options panel; `/jest help` lists commands.
 local _, ns = ...
 
 local Print = ns.Print
@@ -15,7 +15,7 @@ local function slices()
 end
 
 local function changed()
-	ns.SecureWheel.Apply()
+	ns.Changed()
 end
 
 local function parseIndex(text, allowAppend)
@@ -60,29 +60,19 @@ add("set", "set <n> emote <TOKEN||/cmd> || text <message> || macro <macro text, 
 		return
 	end
 
-	if kind == "emote" then
-		local token = ns.Emotes.Resolve(value)
-		if not token then
-			Print(("Unknown emote '%s'. Try /jest emotes %s"):format(value, value:gsub("^/", "")))
-			return
-		end
-		value = token
-	elseif kind == "macro" then
+	if kind == "macro" then
 		value = value:gsub("\\n", "\n")
-		if #value > ns.Slices.MACRO_MAX then
-			Print(("Macro text is %d characters; the limit is %d."):format(#value, ns.Slices.MACRO_MAX))
-			return
-		end
-	elseif #value > 255 then
-		Print("Text emotes are limited to 255 characters.")
+	end
+	local valid, err = ns.Slices.Validate(kind, value)
+	if not valid then
+		Print(err)
 		return
 	end
 
 	local list = slices()
 	local old = list[i] or {}
-	-- Keep a custom icon/label only if the kind is unchanged.
-	local keep = old.kind == kind
-	list[i] = { kind = kind, value = value, icon = keep and old.icon or nil, label = keep and old.label or nil }
+	-- Custom icon/label overrides are kept; reset them with `icon <n> reset` / `label <n> reset`.
+	list[i] = { kind = kind, value = valid, icon = old.icon, label = old.label }
 	Print("Set " .. describe(i, list[i]))
 	changed()
 end)
@@ -116,12 +106,8 @@ add("icon", "icon <n> <fileID || icon name || path || reset>", function(rest)
 	local s = slices()[i]
 	if value:lower() == "reset" then
 		s.icon = nil
-	elseif tonumber(value) then
-		s.icon = tonumber(value)
-	elseif value:find("[\\/]") then
-		s.icon = value
 	else
-		s.icon = "Interface\\Icons\\" .. value
+		s.icon = ns.Slices.ParseIcon(value)
 	end
 	Print("Icon " .. describe(i, s))
 	changed()
@@ -207,10 +193,14 @@ end)
 add("debug", "debug - toggle debug output (prints secure vs skin slice on every fire)", function()
 	ns.debug = not ns.debug
 	Print("Debug " .. (ns.debug and "on" or "off") .. ".")
+	if ns.debug then
+		local action = GetBindingAction and GetBindingAction("BACKSPACE") or "?"
+		Print(("BACKSPACE is bound to: %s"):format(action ~= "" and action or "(nothing)"))
+	end
 end)
 
 local function help()
-	Print("Bind the wheel in Options > Keybindings > AddOns > Jest. Commands (/jest or /ew):")
+	Print("|cffffff00/jest|r opens the options panel (Options > AddOns > Jest). Commands (/jest or /ew):")
 	for _, name in ipairs(order) do
 		Print("  |cffffff00" .. commands[name].usage .. "|r")
 	end
@@ -220,7 +210,12 @@ SLASH_JEST1 = "/jest"
 SLASH_JEST2 = "/ew"
 SlashCmdList.JEST = function(msg)
 	local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
-	local entry = commands[(cmd or ""):lower()]
+	cmd = (cmd or ""):lower()
+	if cmd == "" then
+		ns.Panel.Open()
+		return
+	end
+	local entry = commands[cmd]
 	if entry then
 		entry.fn(rest or "")
 	else

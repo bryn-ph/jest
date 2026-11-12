@@ -5,6 +5,8 @@
 ## Version: 0.1.0
 ## SavedVariables: JestDB
 ## SavedVariablesPerCharacter: JestCharDB
+## IconTexture: Interface\Icons\INV_Misc_Drum_01
+## AddonCompartmentFunc: Jest_OnAddonCompartmentClick
 
 # Bindings.xml is auto-loaded by the client and must not be listed here.
 
@@ -17,4 +19,7 @@ UI\Geometry.lua
 Secure\Snippets.lua
 Secure\SecureWheel.lua
 UI\Skin.lua
+Config\Widgets.lua
+Config\IconPicker.lua
+Config\Panel.lua
 Config\Slash.lua
