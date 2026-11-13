@@ -182,6 +182,41 @@ function Widgets.EmoteBadges(parent)
 	return holder
 end
 
+-- Toggleable chip styled like the tags: dim outline when off, filled in its colour when on.
+-- onChange(checked) is called on click; chip:SetChecked(bool) updates it without calling back.
+function Widgets.ToggleChip(parent, text, color, width, onChange)
+	local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
+	b:SetSize(width, 16)
+	b:SetBackdrop(BACKDROP)
+	b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	b.text:SetPoint("CENTER", 0, 0)
+	b.text:SetText(text)
+	local hover = b:CreateTexture(nil, "HIGHLIGHT")
+	hover:SetPoint("TOPLEFT", 1, -1)
+	hover:SetPoint("BOTTOMRIGHT", -1, 1)
+	hover:SetColorTexture(1, 1, 1, 0.08)
+
+	function b:SetChecked(on)
+		self.checked = on and true or false
+		local r, g, bl = color[1], color[2], color[3]
+		if self.checked then
+			self:SetBackdropColor(r, g, bl, 0.32)
+			self:SetBackdropBorderColor(r, g, bl, 0.95)
+			self.text:SetTextColor(1, 1, 1)
+		else
+			self:SetBackdropColor(r, g, bl, 0.05)
+			self:SetBackdropBorderColor(r, g, bl, 0.35)
+			self.text:SetTextColor(r * 0.75, g * 0.75, bl * 0.75)
+		end
+	end
+	b:SetScript("OnClick", function(self)
+		self:SetChecked(not self.checked)
+		onChange(self.checked)
+	end)
+	b:SetChecked(false)
+	return b
+end
+
 -- One-line key for the tags, using the same colours.
 function Widgets.EmoteBadgeLegend()
 	local function hex(c)
