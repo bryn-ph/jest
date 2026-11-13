@@ -8,15 +8,12 @@ ns.SecureWheel = SW
 
 local btn, anchor
 local pending = false
-local chatActions = {} -- [sliceIndex] = { kind, value } for emote/text slices (read by the `jest` type)
+local chatActions = {} -- [sliceIndex] = { kind, value } for emote slices (read by the `jest` type)
 
 local function performChat(kind, value)
 	if kind == "emote" then
 		local fn = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
 		fn(value)
-	elseif kind == "text" then
-		local fn = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
-		fn(value, "EMOTE")
 	end
 end
 
@@ -34,7 +31,7 @@ local function create()
 	btn:SetAttribute("useOnKeyDown", false) -- actions fire on key UP; key DOWN only opens the wheel
 
 	-- Custom secure type "jest": SecureActionButtonTemplate calls rawget(btn, "jest") insecurely.
-	-- Used for emote/text slices so they go through the native chat APIs instead of macro text.
+	-- Used for emote slices so they go through the native emote API instead of macro text.
 	function btn:jest(_, button)
 		local i = tonumber(button and button:match("^slice(%d+)$"))
 		local action = i and chatActions[i]
@@ -115,7 +112,7 @@ function SW.ForceClose(reason)
 	ns.Skin.Close(nil, reason or "force")
 end
 
--- Fire an emote/text slice directly (used by `/jest test`). Macro slices need the secure path.
+-- Fire an emote slice directly (used by `/jest test`). Macro slices need the secure path.
 function SW.TestChat(i)
 	local s = ns.DB.Wheel().slices[i]
 	if ns.Slices.HasAction(s) and ns.Slices.IsChat(s) then

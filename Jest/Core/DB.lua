@@ -4,7 +4,7 @@ local _, ns = ...
 local DB = {}
 ns.DB = DB
 
-local CURRENT_VERSION = 1
+local CURRENT_VERSION = 2
 
 local function deepCopy(v)
 	if type(v) ~= "table" then return v end
@@ -26,8 +26,29 @@ local function fillDefaults(profile, defaults)
 	end
 end
 
+-- v1 -> v2: the "text" slice kind was removed. Turn each into an equivalent "/e ..." macro and
+-- pin its old icon and label so it looks and behaves the same on the wheel.
+local OLD_TEXT_ICON = "Interface\\Icons\\INV_Misc_Note_01"
+local function migrateTextSlices(db)
+	for _, profile in pairs(db.profiles or {}) do
+		for _, wheel in ipairs(profile.wheels or {}) do
+			for _, s in ipairs(wheel.slices or {}) do
+				if s.kind == "text" then
+					local text = s.value or ""
+					s.kind = "macro"
+					s.value = text ~= "" and ("/e " .. text):sub(1, ns.Slices.MACRO_MAX) or ""
+					s.icon = s.icon or OLD_TEXT_ICON
+					if not s.label and text ~= "" then
+						s.label = #text > 18 and (text:sub(1, 17) .. "...") or text
+					end
+				end
+			end
+		end
+	end
+end
+
 local function migrate(db)
-	-- Future schema changes go here, e.g. `if db.version < 2 then ... end`.
+	if db.version < 2 then migrateTextSlices(db) end
 	db.version = CURRENT_VERSION
 end
 

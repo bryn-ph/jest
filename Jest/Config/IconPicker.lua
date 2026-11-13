@@ -26,7 +26,6 @@ local function buildIconList()
 	for _, s in ipairs(ns.Defaults.profile.wheels[1].slices) do
 		add(ns.EmoteIcons[s.value])
 	end
-	add(ns.KindIcons.text)
 	add(ns.KindIcons.macro)
 
 	if IconDataProviderMixin and CreateAndInitFromMixin and IconDataProviderExtraType then
@@ -119,6 +118,7 @@ local function create()
 			b:SetPoint("TOPLEFT", 14 + (c - 1) * (SIZE + GAP), -42 - (r - 1) * (SIZE + GAP))
 			b.icon = b:CreateTexture(nil, "ARTWORK")
 			b.icon:SetAllPoints()
+			ns.CropIcon(b.icon)
 			b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
 			b.sel = b:CreateTexture(nil, "OVERLAY")
 			b.sel:SetAllPoints()

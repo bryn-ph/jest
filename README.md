@@ -27,9 +27,11 @@ Bind **Open emote wheel (hold)** and **Repeat last emote** under *Options → Ke
 Open it with `/jest` (alias `/ew`), from *Options → AddOns → Jest*, or from the minimap addon-compartment menu.
 - **Jest page:**
   - Set the wheel key and the repeat key: click the button, then press a key. Right-click clears it.
-  - Edit the slices: pick a type (Emote, Text or Macro), type the action and click Save (Enter also saves emote and text slices).
-  - Optionally set a label and choose an icon from the picker.
-  - Add, Remove, and Up/Down to reorder. Test performs an emote or text slice immediately.
+  - Edit the slices: each is either an Emote, chosen from a list, or a Macro, which is any macro text, including `/e …` for a custom emote line.
+  - For Emote slices, the action is a dropdown of every emote the game knows. Open it, type to filter, use the arrow keys or mouse wheel to move, and press Enter or click to pick. Picking saves immediately. New slices open this list straight away. Tags show what each emote does besides its chat line: **Anim** (an animation), **Voice** (a spoken line), or **Text only**. The Anim and Voice chips above the list narrow it to emotes that animate and/or speak; turn both on for emotes that do both.
+  - Optionally set a label (the default shows in grey inside the box) and choose an icon from the picker.
+  - A live preview of the wheel, drawn with the same code as the in-game wheel, shows where each slice sits. Click a slice to edit it, or drag it onto another slice to swap them; dropping in the centre cancels. Add and Remove sit above it. `/jest move` still works from chat.
+  - Test performs an emote slice immediately.
 - **Appearance page:** ring radius, cancel-zone size, wheel scale and sounds.
 
 ### Slash commands
@@ -38,7 +40,7 @@ Open it with `/jest` (alias `/ew`), from *Options → AddOns → Jest*, or from 
 ```
 /jest list
 /jest set 3 emote /roar
-/jest set 4 text waves a tiny flag.
+/jest set 4 macro /e waves a tiny flag.
 /jest set 5 macro /cast Hearthstone
 /jest icon 3 Ability_Druid_ChallangingRoar
 /jest emotes ro
@@ -66,6 +68,24 @@ python -m venv .venv; .venv\Scripts\pip install -r tests\requirements.txt
 .venv\Scripts\python tests\check.py   # syntax-check all Lua + the secure snippet, geometry tests
 .venv\Scripts\python tests\smoke.py   # load the addon against a mocked WoW API, exercise slash/skin/secure paths
 ```
+
+## Emote data
+The Anim and Voice tags in the emote list come from `Jest/Core/EmoteData.lua`. A script generates that file from **WoW: Forever's** own data tables, which wago.tools publishes. Forever's emote data differs a lot from retail's: many voice lines exist only for some races. The file therefore records which races (and occasionally which sex) have each voice line, and in-game the Voice tag reflects your current character. To refresh it after a patch:
+
+```powershell
+.venv\Scripts\python tools\gen_emote_data.py                 # latest Forever build
+.venv\Scripts\python tools\gen_emote_data.py --build <version>
+```
+
+## Wheel art
+The slice segments in `Jest/Media/wedge_<N>.tga` (and `_glow`) are generated, one pair for each slice count from 2 to 12. Each is drawn pointing up and rotated into place in-game. To change their shape, edit `tools/gen_wedges.py`. The geometry constants must match the ones at the top of `Jest/UI/Skin.lua`. Then regenerate:
+
+```powershell
+.venv\Scripts\pip install -r tools\requirements.txt
+.venv\Scripts\python tools\gen_wedges.py --preview preview.png   # preview.png shows an 8-slice wheel
+```
+
+The client only notices new or changed media files after a full restart, not a `/reload`.
 
 ## Debugging in-game
 - `/jest debug` prints the slice the secure code picked and the slice the skin highlighted on every fire. A `MISMATCH` means the two geometry copies have drifted.

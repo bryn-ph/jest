@@ -13,13 +13,16 @@
 Core\Init.lua
 Core\Defaults.lua
 Core\DB.lua
+Core\EmoteData.lua
 Core\Emotes.lua
 Core\Slices.lua
 UI\Geometry.lua
+UI\WheelView.lua
 Secure\Snippets.lua
 Secure\SecureWheel.lua
 UI\Skin.lua
 Config\Widgets.lua
 Config\IconPicker.lua
+Config\EmoteMenu.lua
 Config\Panel.lua
 Config\Slash.lua

@@ -1,16 +1,14 @@
--- The insecure, visual half of the wheel. It never decides what fires (the secure snippet does);
--- it mirrors the snippet's geometry to highlight the slice that WILL fire, and plays feedback.
+-- The insecure, visual half of the in-game wheel. It never decides what fires (the secure snippet
+-- does); it mirrors the snippet's geometry to highlight the slice that WILL fire, and plays
+-- feedback. Drawing is done by a WheelView (UI/WheelView.lua), shared with the options preview.
 -- Non-protected frames can be shown, moved and animated freely in combat.
 local _, ns = ...
 
 local Skin = {}
 ns.Skin = Skin
 
-local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local ICON_SIZE = 40
 local CENTRE_ICON_SIZE = 36
-local HOVER_SCALE = 1.2
-local SCALE_SPEED = 18         -- higher = snappier hover scale easing
 local HOVER_SOUND_GAP = 0.03   -- seconds; throttles tick spam when sweeping across slices
 local WATCHDOG_SECONDS = 15    -- out of combat, force-close a wheel open this long (lost key-up)
 
@@ -21,32 +19,16 @@ local SOUNDS = {
 }
 
 -- State
-local n, radius, deadZoneUI = 0, 110, 28
+local deadZoneUI = 28
 local isOpen, openX, openY, openedAt = false, 0, 0, 0
 local hovered
 local lastHoverSound = 0
-local slots = {}
 
 local function play(which)
 	local profile = ns.DB.Profile()
 	if not (profile and profile.sounds) then return end
 	local id = SOUNDKIT and SOUNDKIT[SOUNDS[which]]
 	if id then PlaySound(id, "SFX") end
-end
-
-local function addCircleMask(parent, texture)
-	local mask = parent:CreateMaskTexture()
-	mask:SetTexture(MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-	mask:SetAllPoints(texture)
-	texture:AddMaskTexture(mask)
-end
-
-local function solidCircle(parent, layer, r, g, b, a)
-	local t = parent:CreateTexture(nil, layer)
-	t:SetColorTexture(r, g, b, a)
-	t:SetPoint("CENTER")
-	addCircleMask(parent, t)
-	return t
 end
 
 local function cursorUI()
@@ -58,57 +40,18 @@ end
 ---------------------------------------------------------------------------
 -- Frames
 ---------------------------------------------------------------------------
-local frame = CreateFrame("Frame", "JestSkin", UIParent)
+local view = ns.WheelView.Create(UIParent, { name = "JestSkin" })
+local frame = view.frame
 frame:SetFrameStrata("FULLSCREEN_DIALOG")
 frame:SetClampedToScreen(true)
 frame:EnableMouse(false)
 frame:Hide()
 
-local backdrop = solidCircle(frame, "BACKGROUND", 0, 0, 0, 0.55)
-local deadDisc = solidCircle(frame, "BORDER", 1, 1, 1, 0.07)
-
-local centreIcon = frame:CreateTexture(nil, "ARTWORK")
-centreIcon:SetSize(CENTRE_ICON_SIZE, CENTRE_ICON_SIZE)
-centreIcon:SetPoint("CENTER", 0, 10)
-addCircleMask(frame, centreIcon)
-
-local centreLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-centreLabel:SetPoint("TOP", centreIcon, "BOTTOM", 0, -4)
-
 local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 hint:SetPoint("TOP", frame, "BOTTOM", 0, 4)
 
-local function getSlot(i)
-	local s = slots[i]
-	if s then return s end
-	s = CreateFrame("Frame", nil, frame)
-	s:SetSize(ICON_SIZE, ICON_SIZE)
-
-	s.glow = solidCircle(s, "BACKGROUND", 1, 0.82, 0.2, 0.45)
-	s.glow:SetSize(ICON_SIZE * 1.55, ICON_SIZE * 1.55)
-	s.glow:SetBlendMode("ADD")
-	s.glow:Hide()
-
-	s.ring = solidCircle(s, "BORDER", 0, 0, 0, 0.85)
-	s.ring:SetSize(ICON_SIZE + 4, ICON_SIZE + 4)
-
-	s.icon = s:CreateTexture(nil, "ARTWORK")
-	s.icon:SetAllPoints()
-	addCircleMask(s, s.icon)
-
-	s.key = s:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-	s.key:SetPoint("TOPLEFT", -3, 3)
-
-	s.scale, s.target, s.x, s.y = 1, 1, 0, 0
-	slots[i] = s
-	return s
-end
-
--- Scaling a frame also scales its anchor offsets, so re-anchor with offset / scale.
-local function placeSlot(s)
-	s:SetScale(s.scale)
-	s:SetPoint("CENTER", frame, "CENTER", s.x / s.scale, s.y / s.scale)
-end
+Skin._art = { highlight = view.hl, glow = view.hlGlow, wedges = view.wedges } -- for tests and /dump
+Skin._view = view
 
 ---------------------------------------------------------------------------
 -- Animations
@@ -143,31 +86,22 @@ end)
 -- Hover / centre
 ---------------------------------------------------------------------------
 local function updateCentre(idx)
-	local s = idx and slots[idx]
+	local s = idx and view.slots[idx]
 	if s and not s.empty then
-		centreIcon:SetTexture(s.iconTexture)
-		centreIcon:SetDesaturated(s.locked)
-		centreIcon:Show()
-		centreLabel:SetText(s.label)
-		centreLabel:SetTextColor(1, 1, 1)
+		view:SetCentre(s.iconTexture, s.label)
+		view.centreIcon:SetDesaturated(s.locked)
 	else
-		centreIcon:Hide()
-		centreLabel:SetText(idx and "Empty" or "Cancel")
-		centreLabel:SetTextColor(0.6, 0.6, 0.6)
+		view:SetCentre(nil, idx and "Empty" or "Cancel", true)
 	end
 end
 
 local function setHover(idx, silent)
-	if hovered and slots[hovered] then
-		slots[hovered].target = 1
-		slots[hovered].glow:Hide()
-	end
 	hovered = idx
-	if idx and slots[idx] then
-		slots[idx].target = HOVER_SCALE
-		slots[idx].glow:Show()
+	view:SetEmphasis(idx)
+	view:SetHighlight(idx)
+	if idx and not silent then
 		local now = GetTime()
-		if not silent and now - lastHoverSound > HOVER_SOUND_GAP then
+		if now - lastHoverSound > HOVER_SOUND_GAP then
 			lastHoverSound = now
 			play("hover")
 		end
@@ -178,22 +112,14 @@ end
 frame:SetScript("OnUpdate", function(_, elapsed)
 	if isOpen then
 		local x, y = cursorUI()
-		local idx = ns.Geometry.SliceAt(x - openX, y - openY, n, deadZoneUI)
+		local idx = ns.Geometry.SliceAt(x - openX, y - openY, view.n, deadZoneUI)
 		if idx ~= hovered then setHover(idx) end
 
 		if GetTime() - openedAt > WATCHDOG_SECONDS and not InCombatLockdown() then
 			ns.SecureWheel.ForceClose("watchdog")
 		end
 	end
-
-	local k = math.min(1, elapsed * SCALE_SPEED)
-	for i = 1, n do
-		local s = slots[i]
-		if math.abs(s.target - s.scale) > 0.002 then
-			s.scale = s.scale + (s.target - s.scale) * k
-			placeSlot(s)
-		end
-	end
+	view:Update(elapsed)
 end)
 
 ---------------------------------------------------------------------------
@@ -201,36 +127,14 @@ end)
 ---------------------------------------------------------------------------
 function Skin.Rebuild()
 	local profile = ns.DB.Profile()
-	local slices = ns.DB.Wheel().slices
-	n = #slices
-	radius = profile.radius
 	deadZoneUI = profile.deadZone * profile.scale
-
 	frame:SetScale(profile.scale)
-	local size = 2 * (radius + ICON_SIZE)
-	frame:SetSize(size, size)
-	backdrop:SetSize(2 * (radius + ICON_SIZE * 0.85), 2 * (radius + ICON_SIZE * 0.85))
-	deadDisc:SetSize(2 * profile.deadZone, 2 * profile.deadZone)
-
-	for i, slice in ipairs(slices) do
-		local s = getSlot(i)
-		s.x, s.y = ns.Geometry.SlicePosition(i, n, radius)
-		s.scale, s.target = 1, 1
-		s:ClearAllPoints()
-		placeSlot(s)
-		s.iconTexture = ns.Slices.Icon(slice)
-		s.icon:SetTexture(s.iconTexture)
-		s.label = ns.Slices.Label(slice)
-		s.empty = not ns.Slices.HasAction(slice)
-		s.chat = ns.Slices.IsChat(slice)
-		s.icon:SetAlpha(s.empty and 0.35 or 1)
-		s.key:SetText(ns.Slices.KeyLabel(i))
-		s.glow:Hide()
-		s:Show()
-	end
-	for i = n + 1, #slots do
-		slots[i]:Hide()
-	end
+	view:Layout(ns.DB.Wheel().slices, {
+		radius = profile.radius,
+		deadZone = profile.deadZone,
+		iconSize = ICON_SIZE,
+		centreIconSize = CENTRE_ICON_SIZE,
+	})
 	hovered = nil
 end
 
@@ -242,17 +146,15 @@ function Skin.Open()
 	frame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx / eff, cy / eff)
 
 	local lockdown = C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown()
-	for i = 1, n do
-		local s = slots[i]
+	view:ResetSlots()
+	for i = 1, view.n do
+		local s = view.slots[i]
 		s.locked = lockdown and s.chat or false
 		s.icon:SetDesaturated(s.locked)
-		s.target, s.scale = 1, 1
-		placeSlot(s)
-		s.glow:Hide()
 	end
 
 	if IsMouselooking() then
-		hint:SetText("Release right-click to aim, or press 1-" .. math.min(n, 9))
+		hint:SetText("Release right-click to aim, or press 1-" .. math.min(view.n, 9))
 	elseif lockdown then
 		hint:SetText("Chat is restricted here; emotes may not send")
 	else
@@ -260,6 +162,7 @@ function Skin.Open()
 	end
 
 	hovered = nil
+	view:ResetHighlight()
 	updateCentre(nil)
 	isOpen = true
 	openedAt = GetTime()
@@ -274,7 +177,7 @@ end
 function Skin.Close(idx, reason)
 	if ns.debug and (reason == "mouse" or reason == "deadzone") then
 		local x, y = cursorUI()
-		local skinIdx = ns.Geometry.SliceAt(x - openX, y - openY, n, deadZoneUI)
+		local skinIdx = ns.Geometry.SliceAt(x - openX, y - openY, view.n, deadZoneUI)
 		local verdict = (skinIdx == idx) and "|cff55ff55match|r" or "|cffff5555MISMATCH|r"
 		ns.Debug("close", reason, "secure =", tostring(idx), "skin =", tostring(skinIdx), verdict)
 	elseif ns.debug then
@@ -284,6 +187,7 @@ function Skin.Close(idx, reason)
 	isOpen = false
 	if idx then
 		if hovered ~= idx then setHover(idx, true) end -- e.g. number-key pick: show what fired
+		view:Flash(idx) -- keep the fired slice lit at full strength for the fade-out
 		play("fire")
 	else
 		play("cancel")

@@ -1,6 +1,7 @@
 local _, ns = ...
 
--- Slice shape: { kind = "emote"|"text"|"macro", value = string, icon = fileID|path|nil, label = string|nil }
+-- Slice shape: { kind = "emote"|"macro", value = string, icon = fileID|path|nil, label = string|nil }
+-- (Schema v1 also had kind = "text"; DB.lua migrates those to "/e ..." macros.)
 -- icon/label are only stored when the user overrides them; otherwise they are derived (Core/Slices.lua).
 ns.Defaults = {
 	profile = {
@@ -40,8 +41,13 @@ ns.EmoteIcons = {
 }
 
 ns.KindIcons = {
-	text = "Interface\\Icons\\INV_Misc_Note_01",
 	macro = "Interface\\Icons\\INV_Misc_Gear_01",
 }
 
 ns.FALLBACK_ICON = 134400 -- INV_Misc_QuestionMark
+
+-- Standard icons have a dark bevelled border baked into the outer ~8%. Cropping it lets the
+-- artwork fill round masks and square frames edge to edge.
+function ns.CropIcon(texture)
+	texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+end
