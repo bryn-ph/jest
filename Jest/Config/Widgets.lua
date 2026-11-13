@@ -222,7 +222,7 @@ function Widgets.EmoteBadgeLegend()
 	local function hex(c)
 		return ("%02x%02x%02x"):format(math.floor(c[1] * 255), math.floor(c[2] * 255), math.floor(c[3] * 255))
 	end
-	return ("|cff%sAnim|r animation   |cff%sVoice|r spoken line"):format(hex(Widgets.ANIM_COLOR), hex(Widgets.VOICE_COLOR))
+	return ("|cff%sAnim|r animation   |cff%sVoice|r your character speaks"):format(hex(Widgets.ANIM_COLOR), hex(Widgets.VOICE_COLOR))
 end
 
 -- /jest debug: log every text change so input problems can be diagnosed from chat.

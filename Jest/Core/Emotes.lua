@@ -67,12 +67,35 @@ function Emotes.Search(query, limit)
 	return results
 end
 
+-- The player's race ID and sex ("m"/"f"), or nil when the game can't say (e.g. at load).
+local function playerRaceSex()
+	local race = UnitRace and select(3, UnitRace("player"))
+	local sex = UnitSex and UnitSex("player")
+	return race, (sex == 2 and "m") or (sex == 3 and "f") or nil
+end
+
 -- What an emote does besides its chat line, from the generated Core/EmoteData.lua.
 -- Returns known, hasAnimation, hasVoice (known = false for emotes missing from the data).
+-- Voice is for THIS character: on WoW: Forever many voice lines exist only for some races
+-- (and occasionally one sex). If the character's race is unknown, any race counts.
 function Emotes.Features(token)
-	local f = ns.EmoteData and token and ns.EmoteData[token]
-	if not f then return false, false, false end
-	return true, f:find("A", 1, true) ~= nil, f:find("V", 1, true) ~= nil
+	local d = ns.EmoteData and token and ns.EmoteData[token]
+	if not d then return false, false, false end
+	local voice = false
+	if d.voice then
+		local race, sex = playerRaceSex()
+		if not race then
+			voice = true
+		else
+			for _, v in ipairs(d.voice) do
+				if v == race or (sex and v == race .. sex) then
+					voice = true
+					break
+				end
+			end
+		end
+	end
+	return true, d.anim == true, voice
 end
 
 -- "WAVE" -> "/wave" (the localized slash command), or nil if the emote has none.

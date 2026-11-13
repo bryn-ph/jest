@@ -56,6 +56,9 @@ InCombatLockdown = function() return false end
 GetCursorPosition = function() return __cx or 500, __cy or 500 end
 GetTime = function() return __t or 0 end
 IsMouselooking = function() return false end
+-- mock character: race 1 (Human), male, unless a test changes __race / __sex
+UnitRace = function() if __race == false then return nil end return 'Human', 'Human', __race or 1 end
+UnitSex = function() return __sex or 2 end
 PlaySound = function() end
 SOUNDKIT = { U_CHAT_SCROLL_BUTTON = 1, IG_MAINMENU_OPTION_CHECKBOX_ON = 2, IG_MAINMENU_OPTION_CHECKBOX_OFF = 3 }
 ClearOverrideBindings = function() end
@@ -431,6 +434,21 @@ check(feat('BORED') == 'truefalsetrue', 'BORED speaks only')
 check(feat('AGREE') == 'truefalsefalse', 'AGREE is text only')
 check(feat('SIT') == 'truetruefalse', 'state emotes (sit) count as animation')
 check(feat('NOT_AN_EMOTE') == 'falsefalsefalse', 'unknown emotes report unknown')
+-- Forever data: voice depends on the character's race (and occasionally sex)
+check(feat('GUFFAW') == 'truetruefalse', 'GUFFAW has no voice for a Human (race 1)')
+__race = 95
+check(feat('GUFFAW') == 'truetruetrue', 'GUFFAW speaks for race 95')
+__race = 96; __sex = 2
+check(feat('HELPME') == 'truetruefalse', 'HELPME: race 96 male has no voice')
+__sex = 3
+check(feat('HELPME') == 'truetruetrue', 'HELPME: race 96 female speaks')
+__race = 6; __sex = 2
+check(feat('MOO') == 'truefalsetrue', 'MOO speaks only for Tauren')
+__race = 1
+check(feat('MOO') == 'truefalsefalse', 'MOO is text only for a Human')
+__race = false
+check(feat('GUFFAW') == 'truetruetrue', 'unknown character: any race with voice counts')
+__race = nil; __sex = nil
 local b = ns.Widgets.EmoteBadges(UIParent)
 b:SetEmote('CHEER'); check(b.anim.__shown and b.voice.__shown and not b.none.__shown, 'badges: both')
 b:SetEmote('WAVE'); check(b.anim.__shown and not b.voice.__shown and not b.none.__shown, 'badges: anim only')
@@ -447,7 +465,7 @@ ns.EmoteMenu.Close()
 check(ui.emoteDropdown.badges.__shown and ui.emoteDropdown.badges.anim.__shown, 'dropdown button tags the chosen emote')
 check(ns.Widgets.EmoteBadgeLegend():find('Anim', 1, true) and ns.Widgets.EmoteBadgeLegend():find('Voice', 1, true), 'legend explains both tags')
 
--- Anim / Voice filter chips (mock emotes: CHEER LAUGH APPLAUD THANK ROAR speak; all 9 animate)
+-- Anim / Voice filter chips (for a Human: CHEER LAUGH THANK speak; all 9 mock emotes animate)
 local function visibleTokens()
 	local t = {}
 	for _, r in ipairs(menu.rows) do if r.__shown then t[#t + 1] = r.token end end
@@ -458,19 +476,19 @@ menu = ns.EmoteMenu._ui()
 check(not menu.chips.anim.checked and not menu.chips.voice.checked, 'chips start off')
 check(menu.count:GetText() == '9 emotes', 'no filter: full count, got ' .. menu.count:GetText())
 menu.chips.voice:Click()
-check(visibleTokens() == 'APPLAUD,CHEER,LAUGH,ROAR,THANK', 'Voice shows only speaking emotes, got ' .. visibleTokens())
-check(menu.count:GetText() == '5 of 9 emotes', 'filtered count, got ' .. menu.count:GetText())
+check(visibleTokens() == 'CHEER,LAUGH,THANK', 'Voice shows only speaking emotes, got ' .. visibleTokens())
+check(menu.count:GetText() == '3 of 9 emotes', 'filtered count, got ' .. menu.count:GetText())
 check(menu.search.__focus, 'search keeps focus after clicking a chip')
 menu.chips.anim:Click()
-check(visibleTokens() == 'APPLAUD,CHEER,LAUGH,ROAR,THANK', 'Anim + Voice requires both')
+check(visibleTokens() == 'CHEER,LAUGH,THANK', 'Anim + Voice requires both')
 menu.chips.voice:Click()
 check(menu.count:GetText() == '9 emotes', 'Anim alone keeps all animated emotes')
 menu.chips.voice:Click()
-menu.search:SetText('ro'); menu.search.__scripts.OnTextChanged(menu.search, true)
-check(visibleTokens() == 'ROAR', 'chips combine with search, got ' .. visibleTokens())
+menu.search:SetText('th'); menu.search.__scripts.OnTextChanged(menu.search, true)
+check(visibleTokens() == 'THANK', 'chips combine with search, got ' .. visibleTokens())
 ns.EmoteMenu.Close()
 ui.emoteDropdown:Click()
-check(menu.chips.voice.checked and visibleTokens() == 'APPLAUD,CHEER,LAUGH,ROAR,THANK', 'chips persist between openings')
+check(menu.chips.voice.checked and visibleTokens() == 'CHEER,LAUGH,THANK', 'chips persist between openings')
 menu.chips.anim:Click(); menu.chips.voice:Click()
 check(visibleTokens():find('WAVE', 1, true), 'chips off shows everything again')
 ns.EmoteMenu.Close()

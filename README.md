@@ -70,10 +70,11 @@ python -m venv .venv; .venv\Scripts\pip install -r tests\requirements.txt
 ```
 
 ## Emote data
-The Anim and Voice tags in the emote list come from `Jest/Core/EmoteData.lua`. A script generates that file from the game's own data tables, which wago.tools publishes. To refresh it after a patch adds emotes:
+The Anim and Voice tags in the emote list come from `Jest/Core/EmoteData.lua`. A script generates that file from **WoW: Forever's** own data tables, which wago.tools publishes. Forever's emote data differs a lot from retail's: many voice lines exist only for some races. The file therefore records which races (and occasionally which sex) have each voice line, and in-game the Voice tag reflects your current character. To refresh it after a patch:
 
 ```powershell
-.venv\Scripts\python tools\gen_emote_data.py
+.venv\Scripts\python tools\gen_emote_data.py                 # latest Forever build
+.venv\Scripts\python tools\gen_emote_data.py --build <version>
 ```
 
 ## Wheel art
