@@ -8,6 +8,7 @@ ignore:
   - README.md
   - LICENSE
   - CHANGELOG.md
+  - CONTRIBUTING.md
   - requirements-dev.txt
   - tools
   - assets

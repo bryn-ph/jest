@@ -35,4 +35,5 @@ jobs:
         with:
           name: jest-package
           path: .release/*.zip
+          include-hidden-files: true # .release is a dot-folder, which upload-artifact skips by default
           if-no-files-found: error
