@@ -211,21 +211,30 @@ check(__opened == 42, '/jest opens settings category')
 __canvas:Show(); __canvas.__scripts.OnShow(__canvas)
 local ui = ns.Panel._ui
 check(ui.editorTitle:GetText() == 'Slice 1', 'editor shows slice 1')
-check(ui.single:GetText() == 'WAVE', 'editor loads WAVE')
+check(ui.emoteDropdown.__shown and not ui.single.__shown, 'emote slices use the dropdown')
+check(ui.emoteDropdown.value == 'WAVE' and ui.emoteDropdown.text:GetText() == 'Wave', 'dropdown shows Wave')
+check(ui.emoteDropdown.cmd:GetText() == '/wave', 'dropdown shows the command')
 
--- edit emote value and save via Enter
-ui.single:SetText('/roar'); ui.single.__scripts.OnTextChanged(ui.single, true)
-ui.single.__scripts.OnEnterPressed(ui.single)
-check(ns.DB.Wheel().slices[1].value == 'ROAR', 'panel save resolves /roar')
+-- pick an emote from the dropdown list: search + Enter picks and saves
+local menu
+local function pickFromMenu(query)
+	ui.emoteDropdown:Click()
+	menu = ns.EmoteMenu._ui()
+	menu.search:SetText(query); menu.search.__scripts.OnTextChanged(menu.search, true)
+	menu.search.__scripts.OnEnterPressed(menu.search)
+end
+pickFromMenu('roar')
+check(ns.DB.Wheel().slices[1].value == 'ROAR', 'dropdown pick saves ROAR')
 check(ui.status:GetText() == 'Saved.', 'saved status, got ' .. ui.status:GetText())
+check(not menu.frame.__shown, 'list closes after pick')
 
--- invalid emote rejected, discarded on select
-ui.single:SetText('nope'); ui.single.__scripts.OnTextChanged(ui.single, true)
-ui.save:Click()
-check(ns.DB.Wheel().slices[1].value == 'ROAR', 'invalid not saved')
+-- invalid draft (empty text) rejected, discarded on select
+ui.kind.text:Click(); ui.save:Click()
+check(ns.DB.Wheel().slices[1].kind == 'emote' and ns.DB.Wheel().slices[1].value == 'ROAR', 'empty text not saved')
 ns.Panel.Select(2)
 check(ui.editorTitle:GetText() == 'Slice 2', 'selected slice 2')
-check(ui.single:GetText() == 'DANCE', 'slice 2 loaded')
+check(ui.status:GetText():find('discarded', 1, true), 'invalid draft discarded on select')
+check(ui.emoteDropdown.value == 'DANCE', 'slice 2 loaded')
 
 -- switch kind emote -> macro converts, save
 ui.kind.macro:Click()
@@ -260,6 +269,9 @@ check(picker.__shown, 'picker reopen')
 ui.add:Click()
 check(#ns.DB.Wheel().slices == 9, 'add slice')
 check(ui.editorTitle:GetText() == 'Slice 9', 'selects new slice')
+check(ns.EmoteMenu.IsOpen(), 'new slice opens the emote list')
+check(ui.emoteDropdown.text:GetText() == 'Choose an emote...', 'empty emote prompts a choice')
+ns.EmoteMenu.Close()
 -- preview wheel reflects the slices
 local pv = ui.preview
 check(pv.n == 9, 'preview shows 9 slices')
@@ -333,7 +345,9 @@ check(ns.DB.Profile().sounds == false, 'sounds proxy')
 -- combat: save queues
 InCombatLockdown = function() return true end
 ns.Panel.Select(3)
-ui.single:SetText('bow'); ui.single.__scripts.OnTextChanged(ui.single, true); ui.save:Click()
+ui.kind.emote:Click()
+pickFromMenu('bow')
+check(ns.DB.Wheel().slices[3].value == 'BOW', 'combat pick saved to DB')
 check(ui.status:GetText() == 'Saved. Applies when combat ends.', 'combat save message')
 InCombatLockdown = function() return false end
 
@@ -343,7 +357,7 @@ check(ui.labelBox.__scripts.OnEditFocusLost ~= nil, 'label box keeps focus-lost 
 
 -- regression: flicking Emote -> Text -> Macro -> Emote must not lose the saved action
 ns.Panel.Select(5)
-check(ui.single:GetText() == 'BOW', 'slice 5 is BOW')
+check(ui.emoteDropdown.value == 'BOW', 'slice 5 is BOW')
 ui.kind.text:Click()
 check(ui.single:GetText() == '', 'text has no conversion from an emote')
 check(ui.hint:GetText():find('Saved as Emote: Bow', 1, true), 'hint says what is saved')
@@ -351,7 +365,7 @@ check(ui.save:IsEnabled(), 'kind change counts as unsaved')
 ui.kind.macro:Click()
 check(ui.multiBox:GetText() == '/bow', 'macro seeded from the saved emote, got ' .. ui.multiBox:GetText())
 ui.kind.emote:Click()
-check(ui.single:GetText() == 'BOW', 'back to emote restores BOW, got ' .. ui.single:GetText())
+check(ui.emoteDropdown.value == 'BOW', 'back to emote restores BOW, got ' .. tostring(ui.emoteDropdown.value))
 check(not ui.save:IsEnabled(), 'back to the saved kind+value is not unsaved')
 check(not ui.editorTitle:GetText():find('unsaved', 1, true), 'title not marked unsaved')
 -- typed text survives a round trip too
@@ -359,7 +373,7 @@ ui.kind.text:Click(); ui.single:SetText('bows deeply.'); ui.single.__scripts.OnT
 ui.kind.emote:Click(); ui.kind.text:Click()
 check(ui.single:GetText() == 'bows deeply.', 'typed text kept across kind switches')
 ui.revert:Click()
-check(ui.single:GetText() == 'BOW' and not ui.save:IsEnabled(), 'revert restores saved')
+check(ui.emoteDropdown.value == 'BOW' and not ui.save:IsEnabled(), 'revert restores saved')
 
 -- ===== UX pass =====
 -- Emote search: prefix matches first, then substring
@@ -370,25 +384,40 @@ for _, e in ipairs(found) do if e.token == 'WAVE' then anyContains = true end en
 check(anyContains, 'search: substring matches included')
 check(#ns.Emotes.Search('', 10) == 0, 'search: empty query returns nothing')
 
--- Suggestions dropdown while typing an emote
+-- Emote dropdown list
 ns.Panel.Select(6)
 ui.kind.emote:Click()
-ui.single:SetFocus(); ui.single.__scripts.OnEditFocusGained(ui.single)
-ui.single:SetText('ro'); ui.single.__scripts.OnTextChanged(ui.single, true)
-check(ui.suggest.__shown, 'suggestions shown while typing')
-check(ui.suggest.rows[1].token == 'ROAR', 'first suggestion is ROAR, got ' .. tostring(ui.suggest.rows[1].token))
-ui.single.__scripts.OnArrowPressed(ui.single, 'DOWN')
-ui.single.__scripts.OnArrowPressed(ui.single, 'UP')
-ui.single.__scripts.OnEnterPressed(ui.single)
-check(ns.DB.Wheel().slices[6].value == 'ROAR', 'Enter picks highlighted suggestion and saves')
-check(not ui.suggest.__shown, 'suggestions hidden after pick')
-ui.single:SetFocus(); ui.single:SetText('zzz'); ui.single.__scripts.OnTextChanged(ui.single, true)
-check(not ui.suggest.__shown, 'no suggestions for no matches')
-ui.single:SetText('wave'); ui.single.__scripts.OnTextChanged(ui.single, true)
-check(not ui.suggest.__shown, 'no dropdown when the text already is the only match')
-ui.revert:Click()
-ui.kind.text:Click(); ui.single:SetFocus(); ui.single:SetText('ro'); ui.single.__scripts.OnTextChanged(ui.single, true)
-check(not ui.suggest.__shown, 'no suggestions for text kind')
+ui.emoteDropdown:Click()
+menu = ns.EmoteMenu._ui()
+check(menu.frame.__shown, 'emote list opens')
+check(menu.search.__focus, 'search box focused on open')
+local listed, currentRow = 0, nil
+for _, r in ipairs(menu.rows) do
+	if r.__shown then listed = listed + 1 end
+	if r.__shown and r.current.__shown then currentRow = r.token end
+end
+check(listed == 9, 'every emote listed (mock has 9), got ' .. listed)
+check(currentRow == ns.DB.Wheel().slices[6].value, 'current emote marked in the list')
+menu.search:SetText('ro'); menu.search.__scripts.OnTextChanged(menu.search, true)
+check(menu.rows[1].token == 'ROAR' and menu.rows[1].__shown, 'search filters, ROAR first')
+menu.search.__scripts.OnArrowPressed(menu.search, 'DOWN')
+menu.search.__scripts.OnArrowPressed(menu.search, 'UP')
+menu.search.__scripts.OnEnterPressed(menu.search)
+check(ns.DB.Wheel().slices[6].value == 'ROAR', 'Enter picks the highlighted emote and saves')
+check(not menu.frame.__shown, 'list closes after pick')
+ui.emoteDropdown:Click(); menu.rows[2]:Click() -- sorted: APPLAUD, BOW, ...
+check(ns.DB.Wheel().slices[6].value == 'BOW', 'clicking a row picks it')
+ui.emoteDropdown:Click(); check(menu.frame.__shown, 'dropdown click opens')
+ui.emoteDropdown:Click(); check(not menu.frame.__shown, 'second click closes')
+ui.emoteDropdown:Click()
+menu.search:SetText('zzz'); menu.search.__scripts.OnTextChanged(menu.search, true)
+check(not menu.rows[1].__shown, 'no rows when nothing matches')
+menu.search.__scripts.OnEnterPressed(menu.search)
+check(ns.DB.Wheel().slices[6].value == 'BOW', 'Enter with no match picks nothing')
+menu.search.__scripts.OnEscapePressed(menu.search)
+check(not menu.frame.__shown, 'Esc closes the list')
+ui.emoteDropdown:Click(); ui.kind.text:Click()
+check(not menu.frame.__shown, 'switching to Text closes the list')
 ui.revert:Click()
 
 -- Segmented control reflects the draft kind; unsaved tag follows dirty state
@@ -400,7 +429,7 @@ ui.revert:Click()
 check(not ui.unsaved.__shown, 'unsaved tag hidden after revert')
 
 -- Label placeholder shows the default label; list shows kind tags
-check(ui.labelBox.placeholder and ui.labelBox.placeholder:GetText() == 'Roar', 'label placeholder is default label, got ' .. tostring(ui.labelBox.placeholder and ui.labelBox.placeholder:GetText()))
+check(ui.labelBox.placeholder and ui.labelBox.placeholder:GetText() == 'Bow', 'label placeholder is default label, got ' .. tostring(ui.labelBox.placeholder and ui.labelBox.placeholder:GetText()))
 check(ui.labelBox.placeholder.__shown, 'placeholder visible while label empty')
 
 -- Icons are cropped (border trimmed) in the wheel
@@ -409,9 +438,10 @@ for _, s in pairs(__texcoords or {}) do cropped = cropped + 1 end
 check(cropped > 0, 'icons cropped with SetTexCoord')
 
 -- hide settles drafts
-ui.single:SetText('cheer'); ui.single.__scripts.OnTextChanged(ui.single, true)
+ui.kind.text:Click()
+ui.single:SetText('cheers wildly.'); ui.single.__scripts.OnTextChanged(ui.single, true)
 __canvas.__scripts.OnHide(__canvas)
-check(ns.DB.Wheel().slices[6].value == 'CHEER', 'hide auto-saves valid draft')
+check(ns.DB.Wheel().slices[6].kind == 'text' and ns.DB.Wheel().slices[6].value == 'cheers wildly.', 'hide auto-saves valid draft')
 
 return fails
 """ + " end")

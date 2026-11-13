@@ -14,14 +14,12 @@ local COLUMN_W = 2 * (PREVIEW.radius + PREVIEW.iconSize)
 local CLICK_AFTER_DRAG = 0.2 -- ignore the click that some clients send right after a drag ends
 local LEFT = 16          -- canvas left padding
 local FIELD_X = 70       -- x of input controls inside the editor card
-local SUGGEST_MAX = 8
-local SUGGEST_ROW_H = 20
 local STATUS_SECONDS = 4 -- success messages clear themselves after this long
 
 local KINDS = { "emote", "text", "macro" }
 local KIND_LABEL = { emote = "Emote", text = "Text", macro = "Macro" }
 local KIND_HINT = {
-	emote = "Start typing to search emotes (e.g. wave, dance, roar). Tab or Enter picks the highlighted one.",
+	emote = "Pick from every emote the game knows. Open the list and type to search; Enter picks.",
 	text = "Custom emote text. Others see \"<your name> <text>\".",
 	macro = "Any macro text, e.g. /cast or /use. Works in combat. Up to 255 characters.",
 }
@@ -281,58 +279,23 @@ local function setDraftValue(v)
 end
 
 ---------------------------------------------------------------------------
--- Emote suggestions (dropdown under the action box while typing an emote)
+-- Emote dropdown (the action control for Emote slices)
 ---------------------------------------------------------------------------
-local suggestIndex = 0
-
-local function hideSuggestions()
-	if ui.suggest then ui.suggest:Hide() end
-	suggestIndex = 0
-end
-
-local function highlightSuggestion(i)
-	suggestIndex = i
-	for k, row in ipairs(ui.suggest.rows) do
-		row.sel:SetShown(k == i)
+local function updateEmoteDropdown(token)
+	local b = ui.emoteDropdown
+	b.value = token ~= "" and token or nil
+	if b.value then
+		b.icon:SetTexture(ns.Slices.Icon({ kind = "emote", value = token }))
+		b.icon:Show()
+		b.text:SetText(ns.Emotes.Label(token))
+		b.text:SetTextColor(1, 1, 1)
+		b.cmd:SetText(ns.Emotes.Command(token) or "")
+	else
+		b.icon:Hide()
+		b.text:SetText("Choose an emote...")
+		b.text:SetTextColor(0.6, 0.6, 0.6)
+		b.cmd:SetText("")
 	end
-end
-
-local function updateSuggestions()
-	if draft.kind ~= "emote" or not ui.single:HasFocus() then
-		hideSuggestions()
-		return
-	end
-	local text = ui.single:GetText()
-	local matches = ns.Emotes.Search(text, SUGGEST_MAX)
-	local exact = ns.Emotes.Resolve(text)
-	if #matches == 0 or (#matches == 1 and matches[1].token == exact) then
-		hideSuggestions()
-		return
-	end
-	for k, row in ipairs(ui.suggest.rows) do
-		local e = matches[k]
-		if e then
-			row.token = e.token
-			row.text:SetText(ns.Emotes.Label(e.token))
-			row.cmd:SetText(e.cmd or e.token)
-			row:Show()
-		else
-			row:Hide()
-		end
-	end
-	ui.suggest:SetHeight(#matches * SUGGEST_ROW_H + 2)
-	ui.suggest:Show()
-	highlightSuggestion(1)
-end
-
-local function moveSuggestion(delta)
-	if not ui.suggest:IsShown() then return end
-	local count = 0
-	for _, row in ipairs(ui.suggest.rows) do
-		if row:IsShown() then count = count + 1 end
-	end
-	if count == 0 then return end
-	highlightSuggestion((suggestIndex - 1 + delta) % count + 1)
 end
 
 ---------------------------------------------------------------------------
@@ -345,19 +308,24 @@ local function updateEditor()
 	ui.kindSwitch:SetValue(draft.kind)
 
 	local value = draftValue()
-	local isMacro = draft.kind == "macro"
-	ui.single:SetShown(not isMacro)
+	local isMacro, isEmote = draft.kind == "macro", draft.kind == "emote"
+	ui.emoteDropdown:SetShown(isEmote)
+	ui.single:SetShown(draft.kind == "text")
 	ui.multi:SetShown(isMacro)
-	local box = isMacro and ui.multiBox or ui.single
-	if box:GetText() ~= value then
-		ns.Debug(("[panel] updateEditor rewrites %s: %q -> %q"):format(box.debugName or "?", box:GetText(), value))
-		box:SetText(value)
+	if isEmote then
+		updateEmoteDropdown(value)
+	else
+		ns.EmoteMenu.Close()
+		local box = isMacro and ui.multiBox or ui.single
+		if box:GetText() ~= value then
+			ns.Debug(("[panel] updateEditor rewrites %s: %q -> %q"):format(box.debugName or "?", box:GetText(), value))
+			box:SetText(value)
+		end
 	end
-	if not isMacro then hideSuggestions() end
 
-	-- The hint (and everything below it) follows whichever action box is visible.
+	-- The hint (and everything below it) follows whichever action control is visible.
 	ui.hint:ClearAllPoints()
-	ui.hint:SetPoint("TOPLEFT", isMacro and ui.multi or ui.single, "BOTTOMLEFT", 0, -6)
+	ui.hint:SetPoint("TOPLEFT", isMacro and ui.multi or (isEmote and ui.emoteDropdown or ui.single), "BOTTOMLEFT", 0, -6)
 	ui.hint:SetPoint("RIGHT", ui.card, "RIGHT", -12, 0)
 	local hint = KIND_HINT[draft.kind]
 	if draft.kind ~= s.kind and ns.Slices.HasAction(s) then
@@ -393,12 +361,16 @@ function Panel.Save()
 	return true
 end
 
-local function pickSuggestion(token)
-	hideSuggestions()
+-- Picking an emote from the list is always valid, so it saves straight away.
+local function pickEmote(token)
 	draft.values.emote = token
-	ui.single:SetText(token)
-	ui.single:ClearFocus()
+	updateEmoteDropdown(token)
 	Panel.Save()
+end
+
+local function openEmoteMenu()
+	local current = draft.values.emote
+	ns.EmoteMenu.Open(ui.emoteDropdown, current ~= "" and current or nil, pickEmote)
 end
 
 -- Leaving a slice with unsaved edits: keep them if valid, otherwise say they were dropped.
@@ -620,7 +592,7 @@ local function buildPreview()
 		table.insert(list, { kind = "emote", value = "" })
 		selected = #list
 		ns.Changed()
-		ui.single:SetFocus()
+		openEmoteMenu() -- new slices start as an emote: go straight to choosing one
 	end)
 	ui.remove:SetScript("OnClick", function()
 		local list = slices()
@@ -635,36 +607,45 @@ local function buildPreview()
 	end)
 end
 
-local function buildSuggestions()
-	local f = CreateFrame("Frame", nil, ui.card, "BackdropTemplate")
-	f:SetFrameLevel((ui.card:GetFrameLevel() or 0) + 20)
-	f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-	f:SetBackdropColor(0.06, 0.06, 0.08, 0.97)
-	f:SetBackdropBorderColor(1, 0.82, 0, 0.6)
-	f:SetPoint("TOPLEFT", ui.single, "BOTTOMLEFT", 0, -2)
-	f:SetPoint("TOPRIGHT", ui.single, "BOTTOMRIGHT", 0, -2)
-	f.rows = {}
-	for i = 1, SUGGEST_MAX do
-		local row = CreateFrame("Button", nil, f)
-		row:SetHeight(SUGGEST_ROW_H)
-		row:SetPoint("TOPLEFT", 1, -1 - (i - 1) * SUGGEST_ROW_H)
-		row:SetPoint("TOPRIGHT", -1, -1 - (i - 1) * SUGGEST_ROW_H)
-		row.sel = row:CreateTexture(nil, "BACKGROUND")
-		row.sel:SetAllPoints()
-		row.sel:SetColorTexture(1, 0.82, 0, 0.2)
-		row.sel:Hide()
-		local hover = row:CreateTexture(nil, "HIGHLIGHT")
-		hover:SetAllPoints()
-		hover:SetColorTexture(1, 1, 1, 0.08)
-		row.text = label(row, "", "GameFontHighlightSmall")
-		row.text:SetPoint("LEFT", 8, 0)
-		row.cmd = label(row, "", "GameFontDisableSmall")
-		row.cmd:SetPoint("RIGHT", -8, 0)
-		row:SetScript("OnClick", function(self) pickSuggestion(self.token) end)
-		f.rows[i] = row
-	end
-	f:Hide()
-	ui.suggest = f
+local function buildEmoteDropdown(card)
+	local b = CreateFrame("Button", nil, card, "BackdropTemplate")
+	b:SetHeight(22)
+	b:SetPoint("TOPLEFT", FIELD_X, -80)
+	b:SetPoint("RIGHT", card, "RIGHT", -12, 0)
+	b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+	b:SetBackdropColor(0, 0, 0, 0.5)
+	b:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+
+	b.icon = b:CreateTexture(nil, "ARTWORK")
+	b.icon:SetSize(16, 16)
+	b.icon:SetPoint("LEFT", 4, 0)
+	ns.CropIcon(b.icon)
+	b.arrow = b:CreateTexture(nil, "ARTWORK")
+	b.arrow:SetSize(18, 18)
+	b.arrow:SetPoint("RIGHT", -2, 0)
+	b.arrow:SetTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+	b.arrow:SetTexCoord(0.2, 0.8, 0.2, 0.8)
+	b.cmd = label(b, "", "GameFontDisableSmall")
+	b.cmd:SetPoint("RIGHT", b.arrow, "LEFT", -4, 0)
+	b.text = label(b, "", "GameFontHighlight")
+	b.text:SetPoint("LEFT", 26, 0)
+	b.text:SetPoint("RIGHT", b.cmd, "LEFT", -6, 0)
+	b.text:SetWordWrap(false)
+	local hover = b:CreateTexture(nil, "HIGHLIGHT")
+	hover:SetPoint("TOPLEFT", 1, -1)
+	hover:SetPoint("BOTTOMRIGHT", -1, 1)
+	hover:SetColorTexture(1, 1, 1, 0.06)
+
+	b:SetScript("OnClick", function()
+		if ns.EmoteMenu.IsOpen() then
+			ns.EmoteMenu.Close()
+		else
+			openEmoteMenu()
+		end
+	end)
+	b:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(1, 0.82, 0, 1) end)
+	b:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1) end)
+	ui.emoteDropdown = b
 end
 
 local function buildEditor()
@@ -705,30 +686,14 @@ local function buildEditor()
 	ui.single:HookScript("OnTextChanged", function(self, userInput)
 		if userInput then
 			setDraftValue(self:GetText())
-			updateSuggestions()
 		end
-	end)
-	ui.single:HookScript("OnEditFocusGained", updateSuggestions)
-	ui.single:HookScript("OnEditFocusLost", function()
-		-- Clicking a suggestion takes focus first; keep the list until the click lands.
-		if not (ui.suggest and ui.suggest:IsMouseOver()) then hideSuggestions() end
 	end)
 	ui.single:SetScript("OnEnterPressed", function(self)
-		if ui.suggest:IsShown() and suggestIndex > 0 then
-			pickSuggestion(ui.suggest.rows[suggestIndex].token)
-			return
-		end
 		self:ClearFocus()
 		Panel.Save()
 	end)
-	ui.single:SetScript("OnTabPressed", function()
-		if ui.suggest:IsShown() and suggestIndex > 0 then
-			pickSuggestion(ui.suggest.rows[suggestIndex].token)
-		end
-	end)
-	ui.single:SetScript("OnArrowPressed", function(_, key)
-		if key == "DOWN" then moveSuggestion(1) elseif key == "UP" then moveSuggestion(-1) end
-	end)
+
+	buildEmoteDropdown(card)
 
 	ui.multi = CreateFrame("Frame", nil, card, "BackdropTemplate")
 	ui.multi:SetHeight(84)
@@ -849,8 +814,6 @@ local function buildEditor()
 			setStatus(savedMessage())
 		end
 	end)
-
-	buildSuggestions()
 end
 
 local function build()
@@ -901,7 +864,7 @@ end)
 canvas:SetScript("OnHide", function()
 	endDrag(true)
 	settleDraft()
-	hideSuggestions()
+	ns.EmoteMenu.Close()
 	ns.IconPicker.Close()
 end)
 

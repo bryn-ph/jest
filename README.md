@@ -28,7 +28,7 @@ Open it with `/jest` (alias `/ew`), from *Options → AddOns → Jest*, or from 
 - **Jest page:**
   - Set the wheel key and the repeat key: click the button, then press a key. Right-click clears it.
   - Edit the slices: pick a type (Emote, Text or Macro), type the action and click Save (Enter also saves emote and text slices).
-  - For emotes, matches appear as you type. The arrow keys move through them, and Enter, Tab or a click picks one, which saves it.
+  - For Emote slices, the action is a dropdown of every emote the game knows. Open it, type to filter, use the arrow keys or mouse wheel to move, and press Enter or click to pick. Picking saves immediately. New slices open this list straight away.
   - Optionally set a label (the default shows in grey inside the box) and choose an icon from the picker.
   - A live preview of the wheel, drawn with the same code as the in-game wheel, shows where each slice sits. Click a slice to edit it, or drag it onto another slice to swap them; dropping in the centre cancels. Add and Remove sit above it. `/jest move` still works from chat.
   - Test performs an emote or text slice immediately.

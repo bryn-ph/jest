@@ -22,5 +22,6 @@ Secure\SecureWheel.lua
 UI\Skin.lua
 Config\Widgets.lua
 Config\IconPicker.lua
+Config\EmoteMenu.lua
 Config\Panel.lua
 Config\Slash.lua

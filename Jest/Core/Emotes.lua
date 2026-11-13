@@ -67,6 +67,13 @@ function Emotes.Search(query, limit)
 	return results
 end
 
+-- "WAVE" -> "/wave" (the localized slash command), or nil if the emote has none.
+function Emotes.Command(token)
+	if not list then scan() end
+	local entry = byToken[token]
+	return entry and entry.cmd or nil
+end
+
 -- "WAVE" -> "Wave" (prefers the localized slash command when available).
 function Emotes.Label(token)
 	if not list then scan() end
