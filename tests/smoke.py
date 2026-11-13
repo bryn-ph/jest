@@ -163,7 +163,8 @@ check(not skin.__shown, 'skin hidden after close anim')
 btn:JestOnOpen(); btn:JestOnClose(nil, 'deadzone'); btn:JestOnOpen(); btn:JestOnClose(3, 'key'); btn:JestOnRepeat(3)
 
 -- ===== wedge art + eased highlight =====
-local art = ns.Skin._art
+local skinView = ns.Skin._view
+local art = { highlight = skinView.hl, glow = skinView.hlGlow, wedges = skinView.wedges }
 local function near(a, b) return math.abs(a - b) < 1e-6 end
 check(art.wedges[1] and art.wedges[1].__tex == [[Interface\AddOns\Jest\Media\wedge_8]], 'wedge texture path for 8 slices, got ' .. tostring(art.wedges[1] and art.wedges[1].__tex))
 check(near(art.wedges[3].__rot, -math.rad(90)), 'wedge 3 rotated 90 deg clockwise')
@@ -533,6 +534,51 @@ check(m[2].icon == 12345 and m[2].label == 'Nod', 'custom icon/label preserved')
 check(m[3].kind == 'emote' and m[3].value == 'WAVE', 'emote slices untouched')
 ns.DB.Init()
 check(m[1].value == '/e waves a tiny flag at everyone nearby.', 'migration runs once')
+
+-- ===== hardening: malformed saved variables are repaired, not trusted =====
+local longMacro = string.rep('x', 400)
+JestDB = { version = 2, profiles = {
+	Default = { radius = 0 / 0, deadZone = 'big', scale = 1e9, sounds = false, wheels = { { slices = {
+		{ kind = 'macro', value = longMacro, label = string.rep('L', 99), icon = { 'not', 'an', 'icon' } },
+		{ kind = 'evil', value = '/run print(1)' },
+		'not a table',
+		{ kind = 'emote', value = 42 },
+	} } } },
+	Broken = 'not a table',
+	[7] = { radius = 100 },
+} }
+JestCharDB = { profile = 'Default' }
+ns.DB.Init()
+local p = ns.DB.Profile()
+check(p.radius == 110 and p.deadZone == 28 and p.scale == 1, 'NaN / wrong type / out-of-range numbers reset to defaults')
+check(p.sounds == false, 'valid false setting kept')
+local hs = ns.DB.Wheel().slices
+check(#hs == 2, 'unknown kinds and non-table slices dropped, got ' .. #hs)
+check(#hs[1].value == 255, 'macro text capped at 255')
+check(#hs[1].label == 40 and hs[1].icon == nil, 'label capped, bad icon dropped')
+check(hs[2].kind == 'emote' and hs[2].value == '', 'non-string value becomes empty')
+check(JestDB.profiles.Broken == nil and JestDB.profiles[7] == nil, 'malformed profiles removed')
+JestDB = 'garbage'; JestCharDB = 42
+ns.DB.Init()
+check(#ns.DB.Wheel().slices == 8, 'garbage SavedVariables start fresh')
+JestDB = { profiles = { Default = { wheels = { { slices = {} } } } } }; JestCharDB = {}
+ns.DB.Init()
+check(#ns.DB.Wheel().slices == 8, 'empty wheel reseeded with defaults')
+
+-- slash numbers: NaN and infinity rejected
+SlashCmdList.JEST('radius nan'); check(ns.DB.Profile().radius == 110, 'radius nan rejected')
+SlashCmdList.JEST('scale inf'); check(ns.DB.Profile().scale == 1, 'scale inf rejected')
+SlashCmdList.JEST('radius 120'); check(ns.DB.Profile().radius == 120, 'valid radius accepted')
+SlashCmdList.JEST('label 1 ' .. string.rep('y', 80)); check(#ns.DB.Wheel().slices[1].label == 40, 'slash label capped')
+
+-- icon input and chat escaping
+check(ns.Slices.ParseIcon('134400') == 134400, 'numeric file ID')
+check(type(ns.Slices.ParseIcon('nan')) == 'string' and type(ns.Slices.ParseIcon('1e5')) == 'string', 'only plain digits become file IDs (nan/1e5 are names)')
+check(ns.Slices.ParseIcon('bad name!') == nil, 'icon names limited to letters, digits, _ and -')
+check(ns.Slices.ParseIcon(string.rep('a/', 200)) == nil, 'over-long paths rejected')
+check(ns.Escape('a|cffff0000b|r') == 'a||cffff0000b||r', 'pipes escaped for chat')
+local _, err = ns.Slices.Validate('emote', '|Hitem:1|h')
+check(err and err:find("'||Hitem:1||h'", 1, true), 'error messages escape user input, got ' .. tostring(err))
 
 return fails
 """ + " end")

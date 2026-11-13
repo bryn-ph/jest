@@ -1,0 +1,4 @@
+# Development only: offline tests and asset/data generators. Not needed to play.
+lupa==2.8
+numpy==2.5.4
+pillow==13.0.0

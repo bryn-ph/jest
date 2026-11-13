@@ -1,0 +1,19 @@
+package-as: Jest
+
+# The addon lives in Jest/ so the repo root can hold tooling; lift it to the top of the package.
+move-folders:
+  Jest/Jest: Jest
+
+ignore:
+  - README.md
+  - LICENSE
+  - CHANGELOG.md
+  - CONTRIBUTING.md
+  - requirements-dev.txt
+  - tools
+  - assets
+  - tests
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown

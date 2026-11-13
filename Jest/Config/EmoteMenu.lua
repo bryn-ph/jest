@@ -126,7 +126,6 @@ local function create()
 	table.insert(UISpecialFrames, "JestEmoteMenu") -- Esc closes it
 
 	search = ns.Widgets.Input(frame, 100)
-	search.debugName = "emoteSearch"
 	search:SetPoint("TOPLEFT", PAD, -PAD)
 	search:SetPoint("TOPRIGHT", -PAD, -PAD)
 	ns.Widgets.SetPlaceholder(search, "Search emotes")
@@ -267,4 +266,4 @@ function Menu.Close()
 	if frame then frame:Hide() end
 end
 
-Menu._ui = function() return { frame = frame, search = search, rows = rows, chips = chips, count = countText } end -- for tests
+Menu._ui = function() return { frame = frame, search = search, rows = rows, chips = chips, count = countText } end -- internal; used by the tests

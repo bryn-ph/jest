@@ -1,13 +1,12 @@
 local _, ns = ...
 
--- Slice shape: { kind = "emote"|"macro", value = string, icon = fileID|path|nil, label = string|nil }
--- (Schema v1 also had kind = "text"; DB.lua migrates those to "/e ..." macros.)
--- icon/label are only stored when the user overrides them; otherwise they are derived (Core/Slices.lua).
+-- A slice is { kind = "emote" | "macro", value = string, icon = fileID | path | nil, label = string | nil }.
+-- icon and label are only stored when the user overrides them (see Core/Slices.lua).
 ns.Defaults = {
 	profile = {
-		radius = 110,   -- distance from centre to slice icons (wheel units)
-		deadZone = 28,  -- release inside this radius cancels (wheel units)
-		scale = 1,      -- overall wheel scale
+		radius = 110, -- centre to slice icons
+		deadZone = 28, -- releasing inside this radius cancels
+		scale = 1,
 		sounds = true,
 		wheels = {
 			{
@@ -28,7 +27,16 @@ ns.Defaults = {
 	},
 }
 
--- Emotes have no native icons; these are hand-picked thematic stand-ins.
+-- Allowed range for each numeric profile setting: { min, max }.
+ns.Limits = {
+	radius = { 40, 300 },
+	deadZone = { 8, 100 },
+	scale = { 0.5, 2 },
+}
+
+ns.LABEL_MAX = 40
+
+-- Emotes have no icons of their own; these are thematic stand-ins.
 ns.EmoteIcons = {
 	WAVE = "Interface\\Icons\\Ability_Warrior_RallyingCry",
 	DANCE = "Interface\\Icons\\INV_Misc_Drum_01",
@@ -46,8 +54,7 @@ ns.KindIcons = {
 
 ns.FALLBACK_ICON = 134400 -- INV_Misc_QuestionMark
 
--- Standard icons have a dark bevelled border baked into the outer ~8%. Cropping it lets the
--- artwork fill round masks and square frames edge to edge.
+-- Trim the bevel baked into the outer edge of standard icons so the art fills round masks.
 function ns.CropIcon(texture)
 	texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 end

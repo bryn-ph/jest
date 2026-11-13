@@ -1,7 +1,6 @@
--- The insecure, visual half of the in-game wheel. It never decides what fires (the secure snippet
--- does); it mirrors the snippet's geometry to highlight the slice that WILL fire, and plays
--- feedback. Drawing is done by a WheelView (UI/WheelView.lua), shared with the options preview.
--- Non-protected frames can be shown, moved and animated freely in combat.
+-- Visual half of the in-game wheel. It never decides what fires (the secure snippet does); it
+-- uses the same geometry to highlight the slice that will fire, and plays feedback sounds.
+-- These frames aren't protected, so they can be shown and animated freely in combat.
 local _, ns = ...
 
 local Skin = {}
@@ -50,8 +49,7 @@ frame:Hide()
 local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 hint:SetPoint("TOP", frame, "BOTTOM", 0, 4)
 
-Skin._art = { highlight = view.hl, glow = view.hlGlow, wedges = view.wedges } -- for tests and /dump
-Skin._view = view
+Skin._view = view -- internal; used by the tests
 
 ---------------------------------------------------------------------------
 -- Animations
@@ -149,7 +147,7 @@ function Skin.Open()
 	view:ResetSlots()
 	for i = 1, view.n do
 		local s = view.slots[i]
-		s.locked = lockdown and s.chat or false
+		s.locked = lockdown and s.isEmote or false
 		s.icon:SetDesaturated(s.locked)
 	end
 

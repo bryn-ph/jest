@@ -159,7 +159,6 @@ local function create()
 	manualLabel:SetText("Or type an icon name, path or file ID:")
 
 	manualBox = ns.Widgets.Input(frame, 260)
-	manualBox.debugName = "iconName"
 	manualBox:SetPoint("TOPLEFT", manualLabel, "BOTTOMLEFT", 0, -4)
 
 	local use = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")

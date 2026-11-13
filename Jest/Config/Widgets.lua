@@ -1,4 +1,4 @@
--- Small shared UI widgets for the options panel and icon picker.
+-- Shared UI widgets for the options panel and popups.
 local _, ns = ...
 
 local Widgets = {}
@@ -16,11 +16,8 @@ local function setBorder(box, c)
 	box:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
 end
 
--- Single-line text input.
--- Deliberately NOT built on InputBoxTemplate: on WoW: Forever, Backspace does nothing in boxes
--- created from that template (it pulls in NarrationEditBoxMixin; exact cause unconfirmed), while
--- plain EditBoxes behave normally.
--- Callers that need focus-lost behaviour should use HookScript("OnEditFocusLost", ...) so the
+-- Single-line text input. A plain EditBox rather than InputBoxTemplate, whose edit boxes
+-- ignore Backspace on WoW: Forever. Use HookScript (not SetScript) for focus handlers so the
 -- focus styling below is kept.
 function Widgets.Input(parent, width, maxLetters)
 	local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
@@ -43,7 +40,6 @@ function Widgets.Input(parent, width, maxLetters)
 		setBorder(self, BORDER)
 		self:HighlightText(0, 0)
 	end)
-	Widgets.TraceInput(box)
 	return box
 end
 
@@ -86,9 +82,8 @@ function Widgets.Card(parent)
 	return card
 end
 
--- Segmented control: a row of mutually exclusive options.
--- items = { { value = "emote", text = "Emote" }, ... }; onSelect(value) is called on click.
--- Returns the holder; holder.buttons[value] are the clickable segments; holder:SetValue(v).
+-- Row of mutually exclusive options. items = { { value = ..., text = ... }, ... };
+-- onSelect(value) fires on click. holder.buttons[value] are the segments; holder:SetValue(v).
 function Widgets.Segmented(parent, items, width, onSelect)
 	local holder = CreateFrame("Frame", nil, parent, "BackdropTemplate")
 	holder:SetSize(width, 24)
@@ -138,7 +133,7 @@ function Widgets.Segmented(parent, items, width, onSelect)
 	return holder
 end
 
--- Small coloured tag ("pill") with a label.
+-- Small coloured tag with a label.
 local function pill(parent, text, color, width)
 	local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
 	f:SetSize(width, 14)
@@ -159,9 +154,8 @@ Widgets.NONE_COLOR = { 0.55, 0.55, 0.55 }
 local PILL_W, PILL_GAP = 38, 4
 Widgets.BADGES_WIDTH = PILL_W * 2 + PILL_GAP
 
--- What an emote does besides its chat line: "Anim" and/or "Voice" tags in fixed columns (so
--- they line up down a list), or a grey "Text only" tag when it does neither.
--- holder:SetEmote(token); nothing is shown for emotes missing from the data.
+-- "Anim" / "Voice" tags in fixed columns so they line up down a list, or "Text only".
+-- holder:SetEmote(token) shows nothing for emotes missing from the data.
 function Widgets.EmoteBadges(parent)
 	local holder = CreateFrame("Frame", nil, parent)
 	holder:SetSize(Widgets.BADGES_WIDTH, 14)
@@ -182,8 +176,7 @@ function Widgets.EmoteBadges(parent)
 	return holder
 end
 
--- Toggleable chip styled like the tags: dim outline when off, filled in its colour when on.
--- onChange(checked) is called on click; chip:SetChecked(bool) updates it without calling back.
+-- On/off chip styled like the tags. onChange(checked) fires on click; SetChecked doesn't call it.
 function Widgets.ToggleChip(parent, text, color, width, onChange)
 	local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
 	b:SetSize(width, 16)
@@ -217,22 +210,10 @@ function Widgets.ToggleChip(parent, text, color, width, onChange)
 	return b
 end
 
--- One-line key for the tags, using the same colours.
+-- One-line key for the tags.
 function Widgets.EmoteBadgeLegend()
 	local function hex(c)
 		return ("%02x%02x%02x"):format(math.floor(c[1] * 255), math.floor(c[2] * 255), math.floor(c[3] * 255))
 	end
 	return ("|cff%sAnim|r animation   |cff%sVoice|r your character speaks"):format(hex(Widgets.ANIM_COLOR), hex(Widgets.VOICE_COLOR))
-end
-
--- /jest debug: log every text change so input problems can be diagnosed from chat.
--- Callers must use HookScript (not SetScript) for OnTextChanged or this trace is lost.
-function Widgets.TraceInput(box, name)
-	if name then box.debugName = name end
-	box:HookScript("OnTextChanged", function(self, userInput)
-		if ns.debug then
-			ns.Debug(("[input %s] changed userInput=%s text=%q"):format(
-				self.debugName or "?", tostring(userInput), self:GetText()))
-		end
-	end)
 end
