@@ -6,13 +6,16 @@ ns.Slices = Slices
 
 Slices.MACRO_MAX = 255
 
+-- Slice kinds: "emote" (a built-in emote token, performed natively) and "macro" (macro text run
+-- by the secure button; custom emote lines are macros like "/e waves.").
 function Slices.HasAction(s)
-	return s and (s.kind == "emote" or s.kind == "text" or s.kind == "macro")
+	return s and (s.kind == "emote" or s.kind == "macro")
 		and type(s.value) == "string" and s.value ~= ""
 end
 
+-- Emote slices go through the chat/emote API (testable from the panel, affected by chat lockdown).
 function Slices.IsChat(s)
-	return s and (s.kind == "emote" or s.kind == "text")
+	return s and s.kind == "emote"
 end
 
 function Slices.Icon(s)
@@ -26,10 +29,6 @@ function Slices.Label(s)
 	if not s then return "" end
 	if s.label then return s.label end
 	if s.kind == "emote" then return ns.Emotes.Label(s.value) end
-	if s.kind == "text" then
-		local v = s.value or ""
-		return #v > 18 and (v:sub(1, 17) .. "…") or v
-	end
 	if s.kind == "macro" then return "Macro" end
 	return "Empty"
 end
@@ -50,19 +49,13 @@ function Slices.Validate(kind, value)
 			return nil, ("Unknown emote '%s'. Try /jest emotes to list them."):format(value)
 		end
 		return token
-	elseif kind == "text" then
-		value = value:gsub("[\r\n]+", " ")
-		if #value > 255 then
-			return nil, ("Text is %d characters; the limit is 255."):format(#value)
-		end
-		return value
 	elseif kind == "macro" then
 		if #value > Slices.MACRO_MAX then
 			return nil, ("Macro is %d characters; the limit is %d."):format(#value, Slices.MACRO_MAX)
 		end
 		return value
 	end
-	return nil, "Kind must be emote, text or macro."
+	return nil, "Kind must be emote or macro."
 end
 
 -- "134400" -> 134400, "Spell_Nature_Polymorph" -> "Interface\\Icons\\Spell_Nature_Polymorph", paths unchanged.

@@ -11,9 +11,9 @@ local ROWS = 10
 local ROW_H = 20
 local PAD = 6
 local SEARCH_H = 22
-local MIN_WIDTH = 240
+local MIN_WIDTH = 300
 
-local frame, search, rows, thumb, countText
+local frame, search, rows, thumb, countText, legend
 local entries = {}  -- current (filtered) list of { token, cmd }
 local offset = 0    -- index of the first visible entry minus one
 local cursor = 0    -- keyboard-highlighted entry index (0 = none)
@@ -32,6 +32,7 @@ local function render()
 			row.token = e.token
 			row.text:SetText(ns.Emotes.Label(e.token))
 			row.cmd:SetText(e.cmd or "")
+			row.badges:SetEmote(e.token)
 			row.current:SetShown(e.token == current)
 			row.sel:SetShown(i == cursor)
 			row:Show()
@@ -138,10 +139,16 @@ local function create()
 		local hover = row:CreateTexture(nil, "HIGHLIGHT")
 		hover:SetAllPoints()
 		hover:SetColorTexture(1, 1, 1, 0.08)
+		-- Right to left: Anim/Voice tags (fixed columns), slash command, then the name.
+		row.badges = ns.Widgets.EmoteBadges(row)
+		row.badges:SetPoint("RIGHT", -6, 0)
+		row.cmd = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+		row.cmd:SetPoint("RIGHT", row.badges, "LEFT", -8, 0)
 		row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		row.text:SetPoint("LEFT", 6, 0)
-		row.cmd = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-		row.cmd:SetPoint("RIGHT", -6, 0)
+		row.text:SetPoint("RIGHT", row.cmd, "LEFT", -6, 0)
+		row.text:SetJustifyH("LEFT")
+		row.text:SetWordWrap(false)
 		row:SetScript("OnClick", function(self) pick(self.token) end)
 		rows[k] = row
 	end
@@ -157,6 +164,9 @@ local function create()
 
 	countText = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	countText:SetPoint("BOTTOMLEFT", PAD + 2, PAD)
+	legend = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	legend:SetPoint("BOTTOMRIGHT", -PAD - 2, PAD)
+	legend:SetText(ns.Widgets.EmoteBadgeLegend())
 
 	frame:EnableMouseWheel(true)
 	frame:SetScript("OnMouseWheel", function(_, delta)

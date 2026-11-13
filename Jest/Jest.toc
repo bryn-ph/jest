@@ -13,6 +13,7 @@
 Core\Init.lua
 Core\Defaults.lua
 Core\DB.lua
+Core\EmoteData.lua
 Core\Emotes.lua
 Core\Slices.lua
 UI\Geometry.lua

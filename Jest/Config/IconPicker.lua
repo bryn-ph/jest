@@ -26,7 +26,6 @@ local function buildIconList()
 	for _, s in ipairs(ns.Defaults.profile.wheels[1].slices) do
 		add(ns.EmoteIcons[s.value])
 	end
-	add(ns.KindIcons.text)
 	add(ns.KindIcons.macro)
 
 	if IconDataProviderMixin and CreateAndInitFromMixin and IconDataProviderExtraType then

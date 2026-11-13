@@ -138,6 +138,58 @@ function Widgets.Segmented(parent, items, width, onSelect)
 	return holder
 end
 
+-- Small coloured tag ("pill") with a label.
+local function pill(parent, text, color, width)
+	local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+	f:SetSize(width, 14)
+	f:EnableMouse(false)
+	f:SetBackdrop(BACKDROP)
+	f:SetBackdropColor(color[1], color[2], color[3], 0.16)
+	f:SetBackdropBorderColor(color[1], color[2], color[3], 0.55)
+	f.text = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	f.text:SetPoint("CENTER", 0, 0)
+	f.text:SetText(text)
+	f.text:SetTextColor(color[1], color[2], color[3])
+	return f
+end
+
+Widgets.ANIM_COLOR = { 0.4, 0.85, 0.95 }
+Widgets.VOICE_COLOR = { 0.82, 0.6, 1 }
+Widgets.NONE_COLOR = { 0.55, 0.55, 0.55 }
+local PILL_W, PILL_GAP = 38, 4
+Widgets.BADGES_WIDTH = PILL_W * 2 + PILL_GAP
+
+-- What an emote does besides its chat line: "Anim" and/or "Voice" tags in fixed columns (so
+-- they line up down a list), or a grey "Text only" tag when it does neither.
+-- holder:SetEmote(token); nothing is shown for emotes missing from the data.
+function Widgets.EmoteBadges(parent)
+	local holder = CreateFrame("Frame", nil, parent)
+	holder:SetSize(Widgets.BADGES_WIDTH, 14)
+	holder:EnableMouse(false)
+	holder.anim = pill(holder, "Anim", Widgets.ANIM_COLOR, PILL_W)
+	holder.anim:SetPoint("LEFT")
+	holder.voice = pill(holder, "Voice", Widgets.VOICE_COLOR, PILL_W)
+	holder.voice:SetPoint("RIGHT")
+	holder.none = pill(holder, "Text only", Widgets.NONE_COLOR, Widgets.BADGES_WIDTH)
+	holder.none:SetPoint("CENTER")
+
+	function holder:SetEmote(token)
+		local known, anim, voice = ns.Emotes.Features(token)
+		self.anim:SetShown(anim)
+		self.voice:SetShown(voice)
+		self.none:SetShown(known and not anim and not voice)
+	end
+	return holder
+end
+
+-- One-line key for the tags, using the same colours.
+function Widgets.EmoteBadgeLegend()
+	local function hex(c)
+		return ("%02x%02x%02x"):format(math.floor(c[1] * 255), math.floor(c[2] * 255), math.floor(c[3] * 255))
+	end
+	return ("|cff%sAnim|r animation   |cff%sVoice|r spoken line"):format(hex(Widgets.ANIM_COLOR), hex(Widgets.VOICE_COLOR))
+end
+
 -- /jest debug: log every text change so input problems can be diagnosed from chat.
 -- Callers must use HookScript (not SetScript) for OnTextChanged or this trace is lost.
 function Widgets.TraceInput(box, name)

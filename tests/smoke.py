@@ -128,15 +128,16 @@ local slash = SlashCmdList.JEST
 slash('set 3 macro /cast Foo\\n/say hi')
 check(btn.__attrs['type-slice3'] == 'macro', 'slice3 macro type')
 check(btn.__attrs['macrotext-slice3'] == '/cast Foo\n/say hi', 'macro newline escape')
-slash('set 9 text waves a tiny flag.')
+slash('set 9 macro /e waves a tiny flag.')
 check(btn.__attrs.count == 9, 'append to 9')
-btn:jest(nil, 'slice9')
-check(__sent[#__sent] == 'EMOTE:waves a tiny flag.', 'text slice sends EMOTE')
+check(btn.__attrs['type-slice9'] == 'macro' and btn.__attrs['macrotext-slice9'] == '/e waves a tiny flag.', 'custom emote line is a macro')
+slash('set 4 text waves')
+check(ns.DB.Wheel().slices[4].kind == 'emote', 'text kind no longer accepted')
 slash('set 1 emote /roar')
 check(ns.DB.Wheel().slices[1].value == 'ROAR', '/roar resolves to ROAR')
 slash('set 1 emote nonsense')
 check(ns.DB.Wheel().slices[1].value == 'ROAR', 'invalid emote rejected')
-slash('move 9 1'); check(ns.DB.Wheel().slices[1].kind == 'text', 'move works')
+slash('move 9 1'); check(ns.DB.Wheel().slices[1].value == '/e waves a tiny flag.', 'move works')
 slash('remove 1'); check(#ns.DB.Wheel().slices == 8, 'remove works')
 slash('icon 2 Spell_Nature_Polymorph'); check(ns.DB.Wheel().slices[2].icon == 'Interface\\Icons\\Spell_Nature_Polymorph', 'icon name expands')
 slash('label 2 Boop'); check(ns.Slices.Label(ns.DB.Wheel().slices[2]) == 'Boop', 'label override')
@@ -211,7 +212,8 @@ check(__opened == 42, '/jest opens settings category')
 __canvas:Show(); __canvas.__scripts.OnShow(__canvas)
 local ui = ns.Panel._ui
 check(ui.editorTitle:GetText() == 'Slice 1', 'editor shows slice 1')
-check(ui.emoteDropdown.__shown and not ui.single.__shown, 'emote slices use the dropdown')
+check(ui.emoteDropdown.__shown and not ui.multi.__shown, 'emote slices use the dropdown')
+check(ui.kind.text == nil and ui.kind.emote and ui.kind.macro, 'only Emote and Macro types')
 check(ui.emoteDropdown.value == 'WAVE' and ui.emoteDropdown.text:GetText() == 'Wave', 'dropdown shows Wave')
 check(ui.emoteDropdown.cmd:GetText() == '/wave', 'dropdown shows the command')
 
@@ -228,9 +230,11 @@ check(ns.DB.Wheel().slices[1].value == 'ROAR', 'dropdown pick saves ROAR')
 check(ui.status:GetText() == 'Saved.', 'saved status, got ' .. ui.status:GetText())
 check(not menu.frame.__shown, 'list closes after pick')
 
--- invalid draft (empty text) rejected, discarded on select
-ui.kind.text:Click(); ui.save:Click()
-check(ns.DB.Wheel().slices[1].kind == 'emote' and ns.DB.Wheel().slices[1].value == 'ROAR', 'empty text not saved')
+-- invalid draft (empty macro) rejected, discarded on select
+ui.kind.macro:Click()
+ui.multiBox:SetText(''); ui.multiBox.__scripts.OnTextChanged(ui.multiBox, true)
+ui.save:Click()
+check(ns.DB.Wheel().slices[1].kind == 'emote' and ns.DB.Wheel().slices[1].value == 'ROAR', 'empty macro not saved')
 ns.Panel.Select(2)
 check(ui.editorTitle:GetText() == 'Slice 2', 'selected slice 2')
 check(ui.status:GetText():find('discarded', 1, true), 'invalid draft discarded on select')
@@ -241,13 +245,14 @@ ui.kind.macro:Click()
 check(ui.multiBox:GetText() == '/dance', 'emote->macro converts to /dance, got ' .. ui.multiBox:GetText())
 ui.save:Click()
 check(btn.__attrs['type-slice2'] == 'macro' and btn.__attrs['macrotext-slice2'] == '/dance', 'macro applied to secure button')
--- macro -> text
-ui.kind.text:Click()
-check(ui.single:GetText() == '', 'macro->text without /e clears')
-ui.single:SetText('juggles.'); ui.single.__scripts.OnTextChanged(ui.single, true); ui.save:Click()
-check(ns.DB.Wheel().slices[2].kind == 'text', 'now text')
+check(not ui.test:IsEnabled(), 'test disabled for macro slices')
+-- macro -> emote: a lone "/dance" converts back to the DANCE emote
+ui.kind.emote:Click()
+check(ui.emoteDropdown.value == 'DANCE', 'macro /dance converts to DANCE')
+ui.save:Click()
+check(ns.DB.Wheel().slices[2].kind == 'emote', 'saved as emote again')
 ui.test:Click()
-check(__sent[#__sent] == 'EMOTE:juggles.', 'test button sends text')
+check(__sent[#__sent] == 'emote:DANCE', 'test button performs the emote')
 
 -- label commit
 ui.labelBox:SetText('  Juggle '); ui.labelBox.__scripts.OnEditFocusLost(ui.labelBox)
@@ -355,23 +360,21 @@ InCombatLockdown = function() return false end
 check(not __templates.InputBoxTemplate, 'no InputBoxTemplate edit boxes')
 check(ui.labelBox.__scripts.OnEditFocusLost ~= nil, 'label box keeps focus-lost handler')
 
--- regression: flicking Emote -> Text -> Macro -> Emote must not lose the saved action
+-- regression: flicking Emote -> Macro -> Emote must not lose the saved action
 ns.Panel.Select(5)
 check(ui.emoteDropdown.value == 'BOW', 'slice 5 is BOW')
-ui.kind.text:Click()
-check(ui.single:GetText() == '', 'text has no conversion from an emote')
-check(ui.hint:GetText():find('Saved as Emote: Bow', 1, true), 'hint says what is saved')
-check(ui.save:IsEnabled(), 'kind change counts as unsaved')
 ui.kind.macro:Click()
 check(ui.multiBox:GetText() == '/bow', 'macro seeded from the saved emote, got ' .. ui.multiBox:GetText())
+check(ui.hint:GetText():find('Saved as Emote: Bow', 1, true), 'hint says what is saved')
+check(ui.save:IsEnabled(), 'kind change counts as unsaved')
 ui.kind.emote:Click()
 check(ui.emoteDropdown.value == 'BOW', 'back to emote restores BOW, got ' .. tostring(ui.emoteDropdown.value))
 check(not ui.save:IsEnabled(), 'back to the saved kind+value is not unsaved')
 check(not ui.editorTitle:GetText():find('unsaved', 1, true), 'title not marked unsaved')
--- typed text survives a round trip too
-ui.kind.text:Click(); ui.single:SetText('bows deeply.'); ui.single.__scripts.OnTextChanged(ui.single, true)
-ui.kind.emote:Click(); ui.kind.text:Click()
-check(ui.single:GetText() == 'bows deeply.', 'typed text kept across kind switches')
+-- typed macro text survives a round trip too
+ui.kind.macro:Click(); ui.multiBox:SetText('/bow\n/e bows deeply.'); ui.multiBox.__scripts.OnTextChanged(ui.multiBox, true)
+ui.kind.emote:Click(); ui.kind.macro:Click()
+check(ui.multiBox:GetText() == '/bow\n/e bows deeply.', 'typed macro kept across kind switches')
 ui.revert:Click()
 check(ui.emoteDropdown.value == 'BOW' and not ui.save:IsEnabled(), 'revert restores saved')
 
@@ -416,9 +419,33 @@ menu.search.__scripts.OnEnterPressed(menu.search)
 check(ns.DB.Wheel().slices[6].value == 'BOW', 'Enter with no match picks nothing')
 menu.search.__scripts.OnEscapePressed(menu.search)
 check(not menu.frame.__shown, 'Esc closes the list')
-ui.emoteDropdown:Click(); ui.kind.text:Click()
-check(not menu.frame.__shown, 'switching to Text closes the list')
+ui.emoteDropdown:Click(); ui.kind.macro:Click()
+check(not menu.frame.__shown, 'switching to Macro closes the list')
 ui.revert:Click()
+
+-- Anim / Voice indicators (generated Core/EmoteData.lua)
+local function feat(t) local k, a, v = ns.Emotes.Features(t); return tostring(k) .. tostring(a) .. tostring(v) end
+check(feat('CHEER') == 'truetruetrue', 'CHEER animates and speaks')
+check(feat('WAVE') == 'truetruefalse', 'WAVE animates only')
+check(feat('BORED') == 'truefalsetrue', 'BORED speaks only')
+check(feat('AGREE') == 'truefalsefalse', 'AGREE is text only')
+check(feat('SIT') == 'truetruefalse', 'state emotes (sit) count as animation')
+check(feat('NOT_AN_EMOTE') == 'falsefalsefalse', 'unknown emotes report unknown')
+local b = ns.Widgets.EmoteBadges(UIParent)
+b:SetEmote('CHEER'); check(b.anim.__shown and b.voice.__shown and not b.none.__shown, 'badges: both')
+b:SetEmote('WAVE'); check(b.anim.__shown and not b.voice.__shown and not b.none.__shown, 'badges: anim only')
+b:SetEmote('BORED'); check(not b.anim.__shown and b.voice.__shown and not b.none.__shown, 'badges: voice only')
+b:SetEmote('AGREE'); check(not b.anim.__shown and not b.voice.__shown and b.none.__shown, 'badges: text only')
+b:SetEmote('NOT_AN_EMOTE'); check(not b.anim.__shown and not b.voice.__shown and not b.none.__shown, 'badges: nothing for unknown')
+ui.emoteDropdown:Click()
+menu = ns.EmoteMenu._ui()
+local rowsByToken = {}
+for _, r in ipairs(menu.rows) do if r.__shown then rowsByToken[r.token] = r end end
+check(rowsByToken.CHEER.badges.voice.__shown and rowsByToken.CHEER.badges.anim.__shown, 'list row shows CHEER as Anim + Voice')
+check(rowsByToken.WAVE.badges.anim.__shown and not rowsByToken.WAVE.badges.voice.__shown, 'list row shows WAVE as Anim only')
+ns.EmoteMenu.Close()
+check(ui.emoteDropdown.badges.__shown and ui.emoteDropdown.badges.anim.__shown, 'dropdown button tags the chosen emote')
+check(ns.Widgets.EmoteBadgeLegend():find('Anim', 1, true) and ns.Widgets.EmoteBadgeLegend():find('Voice', 1, true), 'legend explains both tags')
 
 -- Segmented control reflects the draft kind; unsaved tag follows dirty state
 check(ui.kindSwitch.buttons.emote.bg.__shown and not ui.kindSwitch.buttons.macro.bg.__shown, 'segmented shows emote selected')
@@ -438,10 +465,28 @@ for _, s in pairs(__texcoords or {}) do cropped = cropped + 1 end
 check(cropped > 0, 'icons cropped with SetTexCoord')
 
 -- hide settles drafts
-ui.kind.text:Click()
-ui.single:SetText('cheers wildly.'); ui.single.__scripts.OnTextChanged(ui.single, true)
+ui.kind.macro:Click()
+ui.multiBox:SetText('/e cheers wildly.'); ui.multiBox.__scripts.OnTextChanged(ui.multiBox, true)
 __canvas.__scripts.OnHide(__canvas)
-check(ns.DB.Wheel().slices[6].kind == 'text' and ns.DB.Wheel().slices[6].value == 'cheers wildly.', 'hide auto-saves valid draft')
+check(ns.DB.Wheel().slices[6].kind == 'macro' and ns.DB.Wheel().slices[6].value == '/e cheers wildly.', 'hide auto-saves valid draft')
+
+-- ===== migration: v1 "text" slices become "/e" macros that look the same =====
+JestDB = { version = 1, profiles = { Default = { wheels = { { name = 'Emotes', slices = {
+	{ kind = 'text', value = 'waves a tiny flag at everyone nearby.' },
+	{ kind = 'text', value = 'nods.', icon = 12345, label = 'Nod' },
+	{ kind = 'emote', value = 'WAVE' },
+} } } } } }
+JestCharDB = { profile = 'Default' }
+ns.DB.Init()
+local m = ns.DB.Wheel().slices
+check(JestDB.version == 2, 'DB version bumped to 2')
+check(m[1].kind == 'macro' and m[1].value == '/e waves a tiny flag at everyone nearby.', 'text -> /e macro')
+check(m[1].icon == [[Interface\Icons\INV_Misc_Note_01]], 'migrated slice keeps the old text icon')
+check(m[1].label == 'waves a tiny flag...', 'migrated slice keeps its old label, got ' .. tostring(m[1].label))
+check(m[2].icon == 12345 and m[2].label == 'Nod', 'custom icon/label preserved')
+check(m[3].kind == 'emote' and m[3].value == 'WAVE', 'emote slices untouched')
+ns.DB.Init()
+check(m[1].value == '/e waves a tiny flag at everyone nearby.', 'migration runs once')
 
 return fails
 """ + " end")

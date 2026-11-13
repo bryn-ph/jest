@@ -27,11 +27,11 @@ Bind **Open emote wheel (hold)** and **Repeat last emote** under *Options → Ke
 Open it with `/jest` (alias `/ew`), from *Options → AddOns → Jest*, or from the minimap addon-compartment menu.
 - **Jest page:**
   - Set the wheel key and the repeat key: click the button, then press a key. Right-click clears it.
-  - Edit the slices: pick a type (Emote, Text or Macro), type the action and click Save (Enter also saves emote and text slices).
-  - For Emote slices, the action is a dropdown of every emote the game knows. Open it, type to filter, use the arrow keys or mouse wheel to move, and press Enter or click to pick. Picking saves immediately. New slices open this list straight away.
+  - Edit the slices: each is either an Emote, chosen from a list, or a Macro, which is any macro text, including `/e …` for a custom emote line.
+  - For Emote slices, the action is a dropdown of every emote the game knows. Open it, type to filter, use the arrow keys or mouse wheel to move, and press Enter or click to pick. Picking saves immediately. New slices open this list straight away. Tags show what each emote does besides its chat line: **Anim** (an animation), **Voice** (a spoken line), or **Text only**.
   - Optionally set a label (the default shows in grey inside the box) and choose an icon from the picker.
   - A live preview of the wheel, drawn with the same code as the in-game wheel, shows where each slice sits. Click a slice to edit it, or drag it onto another slice to swap them; dropping in the centre cancels. Add and Remove sit above it. `/jest move` still works from chat.
-  - Test performs an emote or text slice immediately.
+  - Test performs an emote slice immediately.
 - **Appearance page:** ring radius, cancel-zone size, wheel scale and sounds.
 
 ### Slash commands
@@ -40,7 +40,7 @@ Open it with `/jest` (alias `/ew`), from *Options → AddOns → Jest*, or from 
 ```
 /jest list
 /jest set 3 emote /roar
-/jest set 4 text waves a tiny flag.
+/jest set 4 macro /e waves a tiny flag.
 /jest set 5 macro /cast Hearthstone
 /jest icon 3 Ability_Druid_ChallangingRoar
 /jest emotes ro
@@ -67,6 +67,13 @@ These need no game client. They use Lua 5.1 through `lupa`:
 python -m venv .venv; .venv\Scripts\pip install -r tests\requirements.txt
 .venv\Scripts\python tests\check.py   # syntax-check all Lua + the secure snippet, geometry tests
 .venv\Scripts\python tests\smoke.py   # load the addon against a mocked WoW API, exercise slash/skin/secure paths
+```
+
+## Emote data
+The Anim and Voice tags in the emote list come from `Jest/Core/EmoteData.lua`. A script generates that file from the game's own data tables, which wago.tools publishes. To refresh it after a patch adds emotes:
+
+```powershell
+.venv\Scripts\python tools\gen_emote_data.py
 ```
 
 ## Wheel art

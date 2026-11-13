@@ -1,6 +1,7 @@
 local _, ns = ...
 
--- Slice shape: { kind = "emote"|"text"|"macro", value = string, icon = fileID|path|nil, label = string|nil }
+-- Slice shape: { kind = "emote"|"macro", value = string, icon = fileID|path|nil, label = string|nil }
+-- (Schema v1 also had kind = "text"; DB.lua migrates those to "/e ..." macros.)
 -- icon/label are only stored when the user overrides them; otherwise they are derived (Core/Slices.lua).
 ns.Defaults = {
 	profile = {
@@ -40,7 +41,6 @@ ns.EmoteIcons = {
 }
 
 ns.KindIcons = {
-	text = "Interface\\Icons\\INV_Misc_Note_01",
 	macro = "Interface\\Icons\\INV_Misc_Gear_01",
 }
 

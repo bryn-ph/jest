@@ -67,6 +67,14 @@ function Emotes.Search(query, limit)
 	return results
 end
 
+-- What an emote does besides its chat line, from the generated Core/EmoteData.lua.
+-- Returns known, hasAnimation, hasVoice (known = false for emotes missing from the data).
+function Emotes.Features(token)
+	local f = ns.EmoteData and token and ns.EmoteData[token]
+	if not f then return false, false, false end
+	return true, f:find("A", 1, true) ~= nil, f:find("V", 1, true) ~= nil
+end
+
 -- "WAVE" -> "/wave" (the localized slash command), or nil if the emote has none.
 function Emotes.Command(token)
 	if not list then scan() end

@@ -16,12 +16,11 @@ local LEFT = 16          -- canvas left padding
 local FIELD_X = 70       -- x of input controls inside the editor card
 local STATUS_SECONDS = 4 -- success messages clear themselves after this long
 
-local KINDS = { "emote", "text", "macro" }
-local KIND_LABEL = { emote = "Emote", text = "Text", macro = "Macro" }
+local KINDS = { "emote", "macro" }
+local KIND_LABEL = { emote = "Emote", macro = "Macro" }
 local KIND_HINT = {
-	emote = "Pick from every emote the game knows. Open the list and type to search; Enter picks.",
-	text = "Custom emote text. Others see \"<your name> <text>\".",
-	macro = "Any macro text, e.g. /cast or /use. Works in combat. Up to 255 characters.",
+	emote = "Pick from every emote the game knows; type in the list to search. Tags show whether an emote animates (Anim) and/or speaks (Voice).",
+	macro = "Any macro text, e.g. /cast or /use. For a custom emote line, use /e: /e twirls dramatically. Max 255 characters.",
 }
 local BIND_WHEEL = "CLICK JestWheelButton:LeftButton"
 local BIND_REPEAT = "CLICK JestWheelButton:repeat"
@@ -236,16 +235,11 @@ end
 -- Best-effort translation of an action into another kind ("" when there's no sensible one).
 local function convert(fromKind, v, toKind)
 	if v == "" or fromKind == toKind then return v end
-	if toKind == "macro" then
-		if fromKind == "emote" then
-			local token = ns.Emotes.Resolve(v)
-			return token and ("/" .. token:lower()) or ""
-		end
-		return "/e " .. v -- from text
-	elseif toKind == "text" then
-		return fromKind == "macro" and (v:match("^/e%s+(.*)$") or v:match("^/emote%s+(.*)$")) or ""
-	elseif toKind == "emote" then
-		local cmd = fromKind == "macro" and v:match("^(/%S+)%s*$")
+	if toKind == "macro" then -- from emote: "WAVE" -> "/wave"
+		local token = ns.Emotes.Resolve(v)
+		return token and ("/" .. token:lower()) or ""
+	elseif toKind == "emote" then -- from macro: a lone "/wave" -> "WAVE"
+		local cmd = v:match("^(/%S+)%s*$")
 		return (cmd and ns.Emotes.Resolve(cmd)) or ""
 	end
 	return ""
@@ -290,11 +284,14 @@ local function updateEmoteDropdown(token)
 		b.text:SetText(ns.Emotes.Label(token))
 		b.text:SetTextColor(1, 1, 1)
 		b.cmd:SetText(ns.Emotes.Command(token) or "")
+		b.badges:SetEmote(token)
+		b.badges:Show()
 	else
 		b.icon:Hide()
 		b.text:SetText("Choose an emote...")
 		b.text:SetTextColor(0.6, 0.6, 0.6)
 		b.cmd:SetText("")
+		b.badges:Hide()
 	end
 end
 
@@ -310,22 +307,20 @@ local function updateEditor()
 	local value = draftValue()
 	local isMacro, isEmote = draft.kind == "macro", draft.kind == "emote"
 	ui.emoteDropdown:SetShown(isEmote)
-	ui.single:SetShown(draft.kind == "text")
 	ui.multi:SetShown(isMacro)
 	if isEmote then
 		updateEmoteDropdown(value)
 	else
 		ns.EmoteMenu.Close()
-		local box = isMacro and ui.multiBox or ui.single
-		if box:GetText() ~= value then
-			ns.Debug(("[panel] updateEditor rewrites %s: %q -> %q"):format(box.debugName or "?", box:GetText(), value))
-			box:SetText(value)
+		if ui.multiBox:GetText() ~= value then
+			ns.Debug(("[panel] updateEditor rewrites macro: %q -> %q"):format(ui.multiBox:GetText(), value))
+			ui.multiBox:SetText(value)
 		end
 	end
 
 	-- The hint (and everything below it) follows whichever action control is visible.
 	ui.hint:ClearAllPoints()
-	ui.hint:SetPoint("TOPLEFT", isMacro and ui.multi or (isEmote and ui.emoteDropdown or ui.single), "BOTTOMLEFT", 0, -6)
+	ui.hint:SetPoint("TOPLEFT", isMacro and ui.multi or ui.emoteDropdown, "BOTTOMLEFT", 0, -6)
 	ui.hint:SetPoint("RIGHT", ui.card, "RIGHT", -12, 0)
 	local hint = KIND_HINT[draft.kind]
 	if draft.kind ~= s.kind and ns.Slices.HasAction(s) then
@@ -625,8 +620,10 @@ local function buildEmoteDropdown(card)
 	b.arrow:SetPoint("RIGHT", -2, 0)
 	b.arrow:SetTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
 	b.arrow:SetTexCoord(0.2, 0.8, 0.2, 0.8)
+	b.badges = ns.Widgets.EmoteBadges(b)
+	b.badges:SetPoint("RIGHT", b.arrow, "LEFT", -4, 0)
 	b.cmd = label(b, "", "GameFontDisableSmall")
-	b.cmd:SetPoint("RIGHT", b.arrow, "LEFT", -4, 0)
+	b.cmd:SetPoint("RIGHT", b.badges, "LEFT", -6, 0)
 	b.text = label(b, "", "GameFontHighlight")
 	b.text:SetPoint("LEFT", 26, 0)
 	b.text:SetPoint("RIGHT", b.cmd, "LEFT", -6, 0)
@@ -668,7 +665,7 @@ local function buildEditor()
 	for _, kind in ipairs(KINDS) do
 		items[#items + 1] = { value = kind, text = KIND_LABEL[kind] }
 	end
-	ui.kindSwitch = ns.Widgets.Segmented(card, items, 222, function(kind)
+	ui.kindSwitch = ns.Widgets.Segmented(card, items, 180, function(kind)
 		switchKind(kind)
 		updateEditor()
 	end)
@@ -678,20 +675,6 @@ local function buildEditor()
 	-- Action
 	local actionLabel = label(card, "Action", "GameFontHighlightSmall")
 	actionLabel:SetPoint("TOPLEFT", 12, -86)
-
-	ui.single = ns.Widgets.Input(card, 200, 255)
-	ui.single.debugName = "action"
-	ui.single:SetPoint("TOPLEFT", FIELD_X, -80)
-	ui.single:SetPoint("RIGHT", card, "RIGHT", -12, 0)
-	ui.single:HookScript("OnTextChanged", function(self, userInput)
-		if userInput then
-			setDraftValue(self:GetText())
-		end
-	end)
-	ui.single:SetScript("OnEnterPressed", function(self)
-		self:ClearFocus()
-		Panel.Save()
-	end)
 
 	buildEmoteDropdown(card)
 
@@ -723,7 +706,7 @@ local function buildEditor()
 	ns.Widgets.TraceInput(ui.multiBox, "macro")
 
 	ui.hint = label(card, "", "GameFontDisableSmall")
-	ui.hint:SetPoint("TOPLEFT", ui.single, "BOTTOMLEFT", 0, -6) -- re-anchored in updateEditor
+	ui.hint:SetPoint("TOPLEFT", ui.emoteDropdown, "BOTTOMLEFT", 0, -6) -- re-anchored in updateEditor
 	ui.hint:SetPoint("RIGHT", card, "RIGHT", -12, 0)
 	ui.counter = label(card, "", "GameFontDisableSmall")
 	ui.counter:SetPoint("BOTTOMRIGHT", ui.multi, "TOPRIGHT", 0, 3)
@@ -745,10 +728,10 @@ local function buildEditor()
 		if isDirty() then
 			setStatus("Save first, then test.", true)
 		elseif not ns.SecureWheel.TestChat(selected) then
-			setStatus("Only emote and text slices can be tested here; macros fire from the wheel.", true)
+			setStatus("Only emote slices can be tested here; macros fire from the wheel.", true)
 		end
 	end)
-	tooltip(ui.test, "Test", "Performs this emote/text slice now. Macro slices can only fire from the wheel.")
+	tooltip(ui.test, "Test", "Performs this emote now. Macro slices can only fire from the wheel.")
 
 	-- Status is pinned to the card's bottom edge so messages never shift the layout.
 	ui.status = label(card, "", "GameFontHighlightSmall")

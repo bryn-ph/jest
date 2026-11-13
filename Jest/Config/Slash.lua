@@ -37,7 +37,7 @@ local function describe(i, s)
 	return ("%d. |T%s:16|t %s |cff888888[%s] %s|r"):format(i, tostring(icon), ns.Slices.Label(s), s.kind, s.value)
 end
 
-local KIND_ALIASES = { emote = "emote", e = "emote", text = "text", t = "text", macro = "macro", m = "macro" }
+local KIND_ALIASES = { emote = "emote", e = "emote", macro = "macro", m = "macro" }
 
 add("list", "list - show the wheel's slices", function()
 	Print(("Profile '%s':"):format(ns.DB.ProfileName()))
@@ -46,7 +46,7 @@ add("list", "list - show the wheel's slices", function()
 	end
 end)
 
-add("set", "set <n> emote <TOKEN||/cmd> || text <message> || macro <macro text, \\n for new lines>", function(rest)
+add("set", "set <n> emote <TOKEN||/cmd> || macro <macro text; \\n for new lines, /e <text> for a custom emote line>", function(rest)
 	local nText, kindText, value = rest:match("^(%S+)%s+(%S+)%s+(.+)$")
 	if not nText then
 		Print("Usage: /jest " .. commands.set.usage)
@@ -56,7 +56,7 @@ add("set", "set <n> emote <TOKEN||/cmd> || text <message> || macro <macro text, 
 	if not i then return end
 	local kind = KIND_ALIASES[kindText:lower()]
 	if not kind then
-		Print("Kind must be emote, text or macro.")
+		Print("Kind must be emote or macro. For a custom emote line, use: macro /e <text>")
 		return
 	end
 
@@ -123,10 +123,10 @@ add("label", "label <n> <text || reset>", function(rest)
 	changed()
 end)
 
-add("test", "test <n> - fire an emote/text slice now (macro slices need the wheel)", function(rest)
+add("test", "test <n> - perform an emote slice now (macro slices need the wheel)", function(rest)
 	local i = parseIndex(rest)
 	if i and not ns.SecureWheel.TestChat(i) then
-		Print("Only emote/text slices can be tested from chat.")
+		Print("Only emote slices can be tested from chat.")
 	end
 end)
 
