@@ -1,5 +1,0 @@
-<Bindings>
-	<!-- Auto-loaded by the client (not listed in the TOC). Labels are set in JestSpike.lua. -->
-	<Binding name="CLICK JestSpikeButton:LeftButton" header="JESTSPIKE" category="ADDONS"/>
-	<Binding name="CLICK JestSpikeButton:repeat" category="ADDONS"/>
-</Bindings>

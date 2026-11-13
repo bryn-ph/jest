@@ -1,20 +1,20 @@
--- Helpers that derive display data and validity from a slice definition.
+-- Display data and validation for slice definitions.
 local _, ns = ...
 
 local Slices = {}
 ns.Slices = Slices
 
 Slices.MACRO_MAX = 255
+local ICON_PATH_MAX = 260
 
--- Slice kinds: "emote" (a built-in emote token, performed natively) and "macro" (macro text run
--- by the secure button; custom emote lines are macros like "/e waves.").
+-- "emote": a built-in emote token, performed through the emote API.
+-- "macro": macro text run by the secure button (a custom emote line is "/e ...").
 function Slices.HasAction(s)
 	return s and (s.kind == "emote" or s.kind == "macro")
 		and type(s.value) == "string" and s.value ~= ""
 end
 
--- Emote slices go through the chat/emote API (testable from the panel, affected by chat lockdown).
-function Slices.IsChat(s)
+function Slices.IsEmote(s)
 	return s and s.kind == "emote"
 end
 
@@ -37,7 +37,7 @@ local function trim(s)
 	return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
--- Normalise and validate user input for a slice. Returns the value to store, or nil + error.
+-- Returns the value to store, or nil and an error message.
 function Slices.Validate(kind, value)
 	value = trim(value or "")
 	if value == "" then
@@ -46,7 +46,7 @@ function Slices.Validate(kind, value)
 	if kind == "emote" then
 		local token = ns.Emotes.Resolve(value)
 		if not token then
-			return nil, ("Unknown emote '%s'. Try /jest emotes to list them."):format(value)
+			return nil, ("Unknown emote '%s'. Try /jest emotes to list them."):format(ns.Escape(value))
 		end
 		return token
 	elseif kind == "macro" then
@@ -58,16 +58,18 @@ function Slices.Validate(kind, value)
 	return nil, "Kind must be emote or macro."
 end
 
--- "134400" -> 134400, "Spell_Nature_Polymorph" -> "Interface\\Icons\\Spell_Nature_Polymorph", paths unchanged.
+-- "134400" -> 134400; "Spell_Nature_Polymorph" -> "Interface\\Icons\\Spell_Nature_Polymorph";
+-- anything containing a slash is taken as a texture path. Returns nil for unusable input.
 function Slices.ParseIcon(text)
 	text = trim(text or "")
-	if text == "" then return nil end
-	if tonumber(text) then return tonumber(text) end
+	if text == "" or #text > ICON_PATH_MAX then return nil end
+	if text:match("^%d+$") then return tonumber(text) end
 	if text:find("[\\/]") then return text end
+	if not text:match("^[%w_%-]+$") then return nil end
 	return "Interface\\Icons\\" .. text
 end
 
--- Key shown on each slice while the wheel is open (1-9, then 0 for slice 10).
+-- Number key that fires slice i while the wheel is open (1-9, then 0 for the tenth).
 function Slices.KeyLabel(i)
 	if i <= 9 then return tostring(i) end
 	if i == 10 then return "0" end

@@ -1,95 +1,44 @@
 # Jest
 
-A hold-to-open radial emote wheel for **WoW: Forever** (interface 16001). Hold the key, flick the mouse toward an emote, then release. It works in combat.
+A radial emote wheel for **WoW: Forever**. Hold a key, flick the mouse toward an emote, release. Works in combat.
 
-## Install (development)
-Link the addon folder into the client from **Windows PowerShell**. Change `$wow` to match your install:
+> **Alpha.** Please [report issues here](https://github.com/bryn-ph/jest/issues).
 
-```powershell
-$wow = "C:\Program Files (x86)\World of Warcraft\_forever_"
-New-Item -ItemType Junction -Path "$wow\Interface\AddOns\Jest" -Target "C:\Users\brynp\projects\jest\Jest"
-```
+## Features
 
-Restart the client once so it sees the new addon. After that, `/reload` picks up Lua edits. New files and TOC changes still need a restart.
+- Hold-to-open wheel with up to 12 slices; release to fire, release in the centre to cancel.
+- Slices can be any of the game's emotes or a macro (use `/e` for a custom emote line).
+- Emotes are tagged **Anim** and/or **Voice** for your character, with filters to find them.
+- Number keys fire slices while the wheel is open; a second key repeats the last one.
+- Options panel with a live preview: drag slices to rearrange, pick icons and labels, set key bindings.
+- Settings are saved account-wide.
 
-Bind **Open emote wheel (hold)** and **Repeat last emote** under *Options → Keybindings → AddOns → Jest*.
 
-## Using it
-| Action | Result |
+## Usage
+
+1. Open the options with `/jest` (or *Options → AddOns → Jest*) and set the **Open wheel** key.
+2. Hold the key, move the mouse toward a slice, and release.
+
+| While the wheel is open | |
 |---|---|
-| Hold the key, aim, release | Fires the highlighted slice |
-| Release in the centre | Cancels |
-| Number keys `1`–`9`, `0` while open | Fires that slice |
-| `Esc` while open | Cancels |
-| Repeat key | Re-fires the last slice, without opening the wheel |
+| Release in the centre, or `Esc` | Cancel |
+| `1`–`9`, `0` | Fire that slice |
 
-### Options panel
-Open it with `/jest` (alias `/ew`), from *Options → AddOns → Jest*, or from the minimap addon-compartment menu.
-- **Jest page:**
-  - Set the wheel key and the repeat key: click the button, then press a key. Right-click clears it.
-  - Edit the slices: each is either an Emote, chosen from a list, or a Macro, which is any macro text, including `/e …` for a custom emote line.
-  - For Emote slices, the action is a dropdown of every emote the game knows. Open it, type to filter, use the arrow keys or mouse wheel to move, and press Enter or click to pick. Picking saves immediately. New slices open this list straight away. Tags show what each emote does besides its chat line: **Anim** (an animation), **Voice** (a spoken line), or **Text only**. The Anim and Voice chips above the list narrow it to emotes that animate and/or speak; turn both on for emotes that do both.
-  - Optionally set a label (the default shows in grey inside the box) and choose an icon from the picker.
-  - A live preview of the wheel, drawn with the same code as the in-game wheel, shows where each slice sits. Click a slice to edit it, or drag it onto another slice to swap them; dropping in the centre cancels. Add and Remove sit above it. `/jest move` still works from chat.
-  - Test performs an emote slice immediately.
-- **Appearance page:** ring radius, cancel-zone size, wheel scale and sounds.
+Changes made in combat apply when combat ends. `/jest help` lists the slash commands.
 
-### Slash commands
-`/jest help` lists every command. For example:
+## Known limitations
 
-```
-/jest list
-/jest set 3 emote /roar
-/jest set 4 macro /e waves a tiny flag.
-/jest set 5 macro /cast Hearthstone
-/jest icon 3 Ability_Druid_ChallangingRoar
-/jest emotes ro
-```
+- Voice lines on WoW: Forever depend on race. The **Voice** tag reflects your current character.
+- Emotes can't be sent in some instance situations where the game restricts chat.
+- Macro slices are limited to 255 characters, like any macro.
+- English only for now.
 
-Edits made in combat are queued and apply when combat ends.
+## Contributing
 
-## Layout
-| Path | Role |
-|---|---|
-| `Jest/Secure/` | Protected frames and the restricted-Lua click snippet. This part decides what fires. |
-| `Jest/UI/Skin.lua` | Visuals, highlight, animation and sound. Insecure and advisory only. |
-| `Jest/UI/Geometry.lua` | Slice math. It **must** match the copy in `Secure/Snippets.lua`. |
-| `Jest/Core/` | Namespace, SavedVariables and profiles, emote discovery, slice helpers |
-| `Jest/Config/Panel.lua` | Options panel (Settings API): key capture, slice editor, Appearance sliders |
-| `Jest/Config/IconPicker.lua` | Icon picker popup |
-| `Jest/Config/Slash.lua` | `/jest` commands |
-| `spike/` | The original feasibility spike, kept for reference |
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Offline tests
-These need no game client. They use Lua 5.1 through `lupa`:
+## License
 
-```powershell
-python -m venv .venv; .venv\Scripts\pip install -r tests\requirements.txt
-.venv\Scripts\python tests\check.py   # syntax-check all Lua + the secure snippet, geometry tests
-.venv\Scripts\python tests\smoke.py   # load the addon against a mocked WoW API, exercise slash/skin/secure paths
-```
+Code: [MIT](LICENSE).
 
-## Emote data
-The Anim and Voice tags in the emote list come from `Jest/Core/EmoteData.lua`. A script generates that file from **WoW: Forever's** own data tables, which wago.tools publishes. Forever's emote data differs a lot from retail's: many voice lines exist only for some races. The file therefore records which races (and occasionally which sex) have each voice line, and in-game the Voice tag reflects your current character. To refresh it after a patch:
-
-```powershell
-.venv\Scripts\python tools\gen_emote_data.py                 # latest Forever build
-.venv\Scripts\python tools\gen_emote_data.py --build <version>
-```
-
-## Wheel art
-The slice segments in `Jest/Media/wedge_<N>.tga` (and `_glow`) are generated, one pair for each slice count from 2 to 12. Each is drawn pointing up and rotated into place in-game. To change their shape, edit `tools/gen_wedges.py`. The geometry constants must match the ones at the top of `Jest/UI/Skin.lua`. Then regenerate:
-
-```powershell
-.venv\Scripts\pip install -r tools\requirements.txt
-.venv\Scripts\python tools\gen_wedges.py --preview preview.png   # preview.png shows an 8-slice wheel
-```
-
-The client only notices new or changed media files after a full restart, not a `/reload`.
-
-## Debugging in-game
-- `/jest debug` prints the slice the secure code picked and the slice the skin highlighted on every fire. A `MISMATCH` means the two geometry copies have drifted.
-- Turn on `/console scriptErrors 1`, or install BugSack.
-- `/fstack` shows which frames are under the cursor.
-- `/etrace` opens a live event log.
-- For taint problems, run `/console taintLog 1` and then read `_forever_\Logs\taint.log`.
+The icon is based on [Jester Hat](https://game-icons.net/1x1/delapouite/jester-hat.html) by Delapouite, from [game-icons.net](https://game-icons.net), licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). It has been recoloured and framed.

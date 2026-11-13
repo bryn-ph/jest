@@ -1,9 +1,7 @@
--- Namespace, printing, and a tiny event dispatcher shared by every module.
--- Every file receives the same private table `ns` via `...`.
 local addonName, ns = ...
 
 ns.name = addonName
-ns.debug = false -- session-only; toggled with /jest debug
+ns.debug = false
 ns.MAX_SLICES = 12
 
 function ns.Print(...)
@@ -16,12 +14,17 @@ function ns.Debug(...)
 	end
 end
 
--- Keybinding labels shown in Options -> Keybindings -> AddOns -> Jest.
+-- Escape "|" so user text can't inject chat markup (links, textures, colours) when printed.
+function ns.Escape(text)
+	return (tostring(text):gsub("|", "||"))
+end
+
 BINDING_HEADER_JEST = "Jest"
 _G["BINDING_NAME_CLICK JestWheelButton:LeftButton"] = "Open emote wheel (hold)"
 _G["BINDING_NAME_CLICK JestWheelButton:repeat"] = "Repeat last emote"
 
--- Event dispatcher: ns.On("EVENT", function(event, ...) end)
+-- Events ---------------------------------------------------------------------
+
 local eventFrame = CreateFrame("Frame")
 local handlers = {}
 
@@ -33,15 +36,23 @@ function ns.On(event, fn)
 	table.insert(handlers[event], fn)
 end
 
+function ns.Off(event)
+	handlers[event] = nil
+	eventFrame:UnregisterEvent(event)
+end
+
 eventFrame:SetScript("OnEvent", function(_, event, ...)
-	for _, fn in ipairs(handlers[event]) do
+	local list = handlers[event]
+	if not list then return end
+	for _, fn in ipairs(list) do
 		fn(event, ...)
 	end
 end)
 
--- Config change notification: every editor (slash, settings panel) calls ns.Changed() after
--- writing to the DB. It pushes the config to the secure wheel (queued in combat) and lets open
--- UIs refresh themselves.
+-- Config changes -------------------------------------------------------------
+-- Editors (slash commands, options panel) write to the DB and then call ns.Changed(), which
+-- re-applies the secure wheel (deferred while in combat) and refreshes any open UI.
+
 local changeListeners = {}
 
 function ns.OnChanged(fn)
@@ -55,15 +66,15 @@ function ns.Changed()
 	end
 end
 
--- All files are loaded by the time ADDON_LOADED fires for us, and SavedVariables are available.
 ns.On("ADDON_LOADED", function(_, name)
 	if name ~= addonName then return end
+	ns.Off("ADDON_LOADED")
 	ns.DB.Init()
 	ns.Panel.Register()
 	ns.SecureWheel.Apply()
 end)
 
--- TOC `AddonCompartmentFunc`: entry in the minimap addon compartment menu.
+-- Referenced by the TOC's AddonCompartmentFunc.
 function Jest_OnAddonCompartmentClick()
 	ns.Panel.Open()
 end

@@ -4,7 +4,7 @@ Each texture is one ring segment (annulus wedge) pointing straight up, centred i
 canvas, white with alpha. The addon tints it with SetVertexColor and rotates it into place
 with Texture:SetRotation, so a single texture per slice count covers every slice.
 
-Geometry, as fractions of the canvas half-size (keep in sync with UI/Skin.lua):
+Geometry, as fractions of the canvas half-size (keep in sync with UI/WheelView.lua):
     OUTER = 0.98  outer edge of the segment
     INNER = 0.34  inner edge (leaves a hole for the centre icon/label and dead zone)
     GAP   = constant-width gap between neighbouring segments, in output pixels
@@ -13,7 +13,7 @@ Geometry, as fractions of the canvas half-size (keep in sync with UI/Skin.lua):
                  the glow texture 1 / GLOW_SCALE times larger so the two line up
 
 Usage:
-    .venv\\Scripts\\pip install -r tools\\requirements.txt
+    .venv\\Scripts\\pip install -r requirements-dev.txt
     .venv\\Scripts\\python tools\\gen_wedges.py [--preview out.png]
 """
 import argparse

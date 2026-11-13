@@ -1,5 +1,5 @@
--- Restricted-environment snippets. These are STRINGS executed by Blizzard's secure handler
--- sandbox, which is what lets the wheel open and fire in combat. Inside them:
+-- Restricted-environment snippets: strings run by Blizzard's secure handler sandbox, which is
+-- what lets the wheel open and fire in combat. Inside them:
 --   * no addon globals or upvalues: only `self`, `button`, `down`, attributes and frame refs;
 --   * `math`, `string`, `print`, `tostring`, `tonumber` are available; GetTime/GetCursorPosition are not;
 --   * cursor position comes only from `$cursor` anchoring and handle:GetMousePosition().
@@ -82,7 +82,7 @@ ns.Snippets.OnClick = [=[
 		return false
 	end
 
-	-- KEEP IN SYNC WITH UI/Geometry.lua (Geometry.SliceAt).
+	-- Same maths as Geometry.SliceAt in UI/Geometry.lua; keep the two identical.
 	local dx = (x - 0.5) * anchor:GetWidth()
 	local dy = (y - 0.5) * anchor:GetHeight()
 	local dz = self:GetAttribute("deadzone") or 0

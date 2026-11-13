@@ -21,11 +21,15 @@ import csv
 import io
 import json
 import pathlib
+import re
+import sys
 import urllib.request
 
 UA = {"User-Agent": "jest-addon-build"}
 OUT = pathlib.Path(__file__).resolve().parents[1] / "Jest" / "Core" / "EmoteData.lua"
 SEX = {0: "m", 1: "f"}  # EmotesTextSound.SexID
+# Tokens are written into Lua source as table keys, so only plain identifiers are accepted.
+TOKEN_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
 def fetch(url: str) -> bytes:
@@ -79,7 +83,9 @@ def main() -> None:
     entries = {}
     for t in texts:
         token = t["Name"].strip().upper()
-        if not token:
+        if not TOKEN_RE.match(token):
+            if token:
+                print(f"skipping unexpected emote name {token!r}", file=sys.stderr)
             continue
         e = emotes.get(t["EmoteID"])
         anim = bool(e) and (to_int(e["AnimID"]) > 0 or to_int(e["EmoteSpecProc"]) in (1, 2))
@@ -104,7 +110,7 @@ def main() -> None:
             fields.append("voice = { " + lua_voice(races) + " }")
         lines.append(f"\t{token} = {{ {', '.join(fields)} }}," if fields else f"\t{token} = {{}},")
     lines.append("}")
-    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
     counts = collections.Counter((anim, bool(races)) for anim, races in entries.values())
     print(f"wrote {len(entries)} emotes from {args.product} {build} to {OUT}")

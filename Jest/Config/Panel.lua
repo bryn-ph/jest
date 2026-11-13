@@ -1,8 +1,7 @@
--- Options panel in Blizzard's Settings UI (Options -> AddOns -> Jest):
---   * "Jest" canvas page: key bindings + slice list + slice editor card
---   * "Appearance" vertical-layout subpage: radius, dead zone, scale, sounds
--- Everything writes to the DB and calls ns.Changed(), which re-applies the secure wheel
--- (queued until combat ends if needed).
+-- Options panel (Options > AddOns > Jest).
+--   Jest:       key bindings, a wheel preview (click to select, drag to swap) and the slice editor
+--   Appearance: radius, cancel zone, scale and sounds
+-- Edits write to the DB and call ns.Changed().
 local addonName, ns = ...
 
 local Panel = {}
@@ -30,11 +29,10 @@ canvas:Hide()
 local category
 local built = false
 local ui = {}
-Panel._ui = ui -- exposed for tests/debugging (/dump)
+Panel._ui = ui -- internal; used by the tests
 local selected = 1
--- Unsaved edits for the selected slice. `values` holds one draft per kind, so flicking between
--- Emote/Text/Macro never loses what was typed (or what is saved). `slice` is the saved table the
--- draft belongs to; "unsaved" is derived by comparing against it, never tracked as a flag.
+-- Unsaved edits for the selected slice: one draft value per kind, so switching between Emote
+-- and Macro never loses what was typed. "Unsaved" is worked out by comparing with draft.slice.
 local draft = { slice = nil, kind = "emote", values = {} }
 
 local function slices()
@@ -88,9 +86,14 @@ local function label(parent, text, font)
 	return fs
 end
 
+-- The packager replaces the TOC's @project-version@ token; a source checkout shows "dev".
 local function addonVersion()
 	local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
-	return get and get(addonName, "Version") or nil
+	local version = get and get(addonName, "Version")
+	if not version or version:find("@", 1, true) then
+		return "dev"
+	end
+	return version
 end
 
 ---------------------------------------------------------------------------
@@ -125,9 +128,8 @@ local function createBindButton(parent, command)
 		self:SetText(key and keyText(key) or "|cff888888Not bound|r")
 	end
 
-	-- IMPORTANT: the OnKeyDown handler exists only while capturing. Setting an OnKeyDown script
-	-- turns keyboard input on for the frame, and a permanently keyboard-enabled button here
-	-- swallowed Backspace from the panel's text boxes.
+	-- The OnKeyDown script is only set while capturing: a frame with one receives keyboard
+	-- input, which would otherwise steal keys (e.g. Backspace) from the panel's text boxes.
 	local onKeyDown
 
 	local function stop(self)
@@ -310,7 +312,6 @@ local function updateEditor()
 	else
 		ns.EmoteMenu.Close()
 		if ui.multiBox:GetText() ~= value then
-			ns.Debug(("[panel] updateEditor rewrites macro: %q -> %q"):format(ui.multiBox:GetText(), value))
 			ui.multiBox:SetText(value)
 		end
 	end
@@ -328,13 +329,12 @@ local function updateEditor()
 	ui.counter:SetText(isMacro and ("%d/%d"):format(#value, ns.Slices.MACRO_MAX) or "")
 
 	if ui.labelBox:GetText() ~= (s.label or "") then
-		ns.Debug(("[panel] updateEditor rewrites label: %q -> %q"):format(ui.labelBox:GetText(), s.label or ""))
 		ui.labelBox:SetText(s.label or "")
 	end
 	ns.Widgets.SetPlaceholder(ui.labelBox, ns.Slices.Label({ kind = s.kind, value = s.value }))
 	ui.iconButton.icon:SetTexture(ns.Slices.Icon(s))
 	ui.iconReset:SetEnabled(s.icon ~= nil)
-	ui.test:SetEnabled(ns.Slices.IsChat(s) and ns.Slices.HasAction(s))
+	ui.test:SetEnabled(ns.Slices.IsEmote(s) and ns.Slices.HasAction(s))
 	updateDirtyState()
 end
 
@@ -493,11 +493,8 @@ end
 local function buildHeader()
 	local title = label(canvas, "Jest", "GameFontHighlightHuge")
 	title:SetPoint("TOPLEFT", LEFT, -16)
-	local version = addonVersion()
-	if version then
-		local v = label(canvas, "v" .. version, "GameFontDisableSmall")
-		v:SetPoint("BOTTOMLEFT", title, "BOTTOMRIGHT", 6, 2)
-	end
+	local version = label(canvas, addonVersion(), "GameFontDisableSmall")
+	version:SetPoint("BOTTOMLEFT", title, "BOTTOMRIGHT", 6, 2)
 	local sub = label(canvas, "Hold your wheel key, aim at a slice and release. Release in the centre or press Esc to cancel. Type /jest help for chat commands.", "GameFontHighlightSmall")
 	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 	sub:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
@@ -696,7 +693,6 @@ local function buildEditor()
 			ui.counter:SetText(("%d/%d"):format(#draftValue(), ns.Slices.MACRO_MAX))
 		end
 	end)
-	ns.Widgets.TraceInput(ui.multiBox, "macro")
 
 	ui.hint = label(card, "", "GameFontDisableSmall")
 	ui.hint:SetPoint("TOPLEFT", ui.emoteDropdown, "BOTTOMLEFT", 0, -6) -- re-anchored in updateEditor
@@ -720,7 +716,7 @@ local function buildEditor()
 	ui.test:SetScript("OnClick", function()
 		if isDirty() then
 			setStatus("Save first, then test.", true)
-		elseif not ns.SecureWheel.TestChat(selected) then
+		elseif not ns.SecureWheel.TestEmote(selected) then
 			setStatus("Only emote slices can be tested here; macros fire from the wheel.", true)
 		end
 	end)
@@ -742,11 +738,10 @@ local function buildEditor()
 
 	local labelLabel = label(card, "Label", "GameFontHighlightSmall")
 	labelLabel:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, -16)
-	ui.labelBox = ns.Widgets.Input(card, 180, 40)
-	ui.labelBox.debugName = "label"
+	ui.labelBox = ns.Widgets.Input(card, 180, ns.LABEL_MAX)
 	ui.labelBox:SetPoint("LEFT", labelLabel, "LEFT", FIELD_X - 12, 0)
 	ui.labelBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-	ui.labelBox:HookScript("OnEditFocusLost", commitLabel) -- Hook keeps the widget's focus styling
+	ui.labelBox:HookScript("OnEditFocusLost", commitLabel)
 	tooltip(ui.labelBox, "Label", "Name shown in the middle of the wheel. Leave empty to use the default (shown in grey).")
 
 	local iconLabel = label(card, "Icon", "GameFontHighlightSmall")
@@ -844,7 +839,7 @@ canvas:SetScript("OnHide", function()
 	ns.IconPicker.Close()
 end)
 
--- Hooks the Settings panel may call on canvas pages.
+-- Called by the Settings panel on canvas pages.
 canvas.OnCommit = function() end
 canvas.OnDefault = function() end
 canvas.OnRefresh = function() Panel.Refresh() end
@@ -857,7 +852,8 @@ local function registerAppearance(parent)
 	local sub = Settings.RegisterVerticalLayoutSubcategory(parent, "Appearance")
 	local varType = Settings.VarType or {}
 
-	local function slider(key, name, minV, maxV, step, fmt, tooltipText, round)
+	local function slider(key, name, step, fmt, tooltipText, round)
+		local minV, maxV = ns.Limits[key][1], ns.Limits[key][2]
 		local setting = Settings.RegisterProxySetting(sub, "JEST_" .. key:upper(), varType.Number or "number", name,
 			ns.Defaults.profile[key],
 			function() return ns.DB.Profile()[key] end,
@@ -875,11 +871,11 @@ local function registerAppearance(parent)
 	local function whole(v) return math.floor(v + 0.5) end
 	local function twentieths(v) return math.floor(v * 20 + 0.5) / 20 end
 
-	slider("radius", "Ring radius", 40, 300, 1, function(v) return ("%d"):format(v) end,
+	slider("radius", "Ring radius", 1, function(v) return ("%d"):format(v) end,
 		"Distance from the centre of the wheel to the slice icons.", whole)
-	slider("deadZone", "Cancel zone", 8, 100, 1, function(v) return ("%d"):format(v) end,
+	slider("deadZone", "Cancel zone", 1, function(v) return ("%d"):format(v) end,
 		"Releasing the key within this distance of the centre cancels.", whole)
-	slider("scale", "Wheel scale", 0.5, 2, 0.05, function(v) return ("%.2f"):format(v) end,
+	slider("scale", "Wheel scale", 0.05, function(v) return ("%.2f"):format(v) end,
 		"Overall size of the wheel.", twentieths)
 
 	local sounds = Settings.RegisterProxySetting(sub, "JEST_SOUNDS", varType.Boolean or "boolean", "Sounds",

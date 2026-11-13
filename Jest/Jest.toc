@@ -1,14 +1,18 @@
 ## Interface: 16001
 ## Title: Jest
-## Notes: Hold-to-open radial emote wheel. Hold the key, flick toward an emote, release.
+## Notes: Radial emote wheel. Hold a key, flick toward an emote, release.
 ## Author: bryn-ph
-## Version: 0.1.0
+## Version: @project-version@
+## Category: Roleplay
+## IconTexture: Interface\AddOns\Jest\Media\icon
 ## SavedVariables: JestDB
 ## SavedVariablesPerCharacter: JestCharDB
-## IconTexture: Interface\Icons\INV_Misc_Drum_01
 ## AddonCompartmentFunc: Jest_OnAddonCompartmentClick
+## X-License: MIT
+## X-Website: https://github.com/bryn-ph/jest
+## X-Credits: Icon based on "Jester Hat" by Delapouite (game-icons.net), CC BY 3.0, recoloured
 
-# Bindings.xml is auto-loaded by the client and must not be listed here.
+# Bindings.xml is loaded automatically and must not be listed here.
 
 Core\Init.lua
 Core\Defaults.lua

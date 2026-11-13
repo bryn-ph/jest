@@ -1,8 +1,7 @@
--- Pure wheel geometry. No WoW API calls, so it can be unit-tested outside the game.
+-- Wheel geometry with no WoW API calls, so it can be tested outside the game.
 --
--- !!! SliceAt MUST stay identical to the math in Secure/Snippets.lua. The secure copy decides
--- what fires; this copy drives the highlight. If they disagree the wheel feels broken.
--- `/jest debug` prints both indices on every fire to catch drift.
+-- SliceAt must match the copy in Secure/Snippets.lua: the snippet decides what fires, this one
+-- drives the highlight. With /jest debug on, every fire reports whether the two agreed.
 local _, ns = ...
 
 local Geometry = {}
