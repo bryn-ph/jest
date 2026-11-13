@@ -11,6 +11,7 @@
 ## X-License: MIT
 ## X-Website: https://github.com/bryn-ph/jest
 ## X-Credits: Icon based on "Jester Hat" by Delapouite (game-icons.net), CC BY 3.0, recoloured
+## X-Curse-Project-ID: 1801718
 
 # Bindings.xml is loaded automatically and must not be listed here.
 
