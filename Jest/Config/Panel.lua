@@ -8,19 +8,35 @@ local Panel = {}
 ns.Panel = Panel
 
 -- Preview wheel (a WheelView, the same drawing code as the in-game wheel), scaled down.
-local PREVIEW = { radius = 88, deadZone = 22, iconSize = 30, centreIconSize = 26 }
+local PREVIEW = { radius = 88, deadZone = 22, iconSize = 30, centreIconSize = 32 }
 local COLUMN_W = 2 * (PREVIEW.radius + PREVIEW.iconSize)
 local CLICK_AFTER_DRAG = 0.2 -- ignore the click that some clients send right after a drag ends
 local LEFT = 16          -- canvas left padding
 local FIELD_X = 70       -- x of input controls inside the editor card
 local STATUS_SECONDS = 4 -- success messages clear themselves after this long
 
-local KINDS = { "emote", "macro" }
-local KIND_LABEL = { emote = "Emote", macro = "Macro" }
+local UNDO_SECONDS = 10
+local CURSOR_POLL = 0.1  -- how often the preview checks whether you're holding something droppable
+
+-- Editor tabs. "action" covers every draggable kind in Core/Actions.lua (item, spell, mount...).
+local KINDS = { "emote", "macro", "action" }
+local KIND_LABEL = { emote = "Emote", macro = "Macro", action = "Action" }
 local KIND_HINT = {
 	emote = "Pick from every emote the game knows; type in the list to search. Tags show whether an emote animates (Anim) and/or speaks (Voice).",
 	macro = "Any macro text, e.g. /cast or /use. For a custom emote line, use /e: /e twirls dramatically. Max 255 characters.",
+	action = "Drag an item, spell, mount, toy, battle pet, macro or equipment set onto this box, or onto any slice in the preview. Drops save straight away.",
 }
+local DROP_PROMPT = "Drag something here"
+
+-- Editor tab for a slice kind.
+local function tabFor(kind)
+	return ns.Actions.IsAction(kind) and "action" or kind
+end
+
+-- Human name for a slice kind ("Item", "Macro", ...).
+local function kindName(kind)
+	return KIND_LABEL[kind] or ns.Actions.KindLabel(kind) or kind
+end
 local BIND_WHEEL = "CLICK JestWheelButton:LeftButton"
 local BIND_REPEAT = "CLICK JestWheelButton:repeat"
 
@@ -42,6 +58,7 @@ end
 local statusToken = 0
 local function setStatus(text, isError)
 	if not ui.status then return end
+	if ui.undo then ui.undo:Hide() end -- a new message replaces any pending undo offer
 	text = text or ""
 	ui.status:SetText(text)
 	if isError then
@@ -216,6 +233,7 @@ end
 ---------------------------------------------------------------------------
 -- Drafts
 ---------------------------------------------------------------------------
+-- Emote and macro drafts are strings; the action draft is { kind = ..., value = ... } or nil.
 local function draftValue()
 	return draft.values[draft.kind] or ""
 end
@@ -223,20 +241,47 @@ end
 local function isDirty()
 	local s = draft.slice
 	if not s then return false end
-	return draft.kind ~= s.kind or draftValue() ~= (s.value or "")
+	if draft.kind ~= tabFor(s.kind) then return true end
+	if draft.kind == "action" then
+		local a = draft.values.action
+		return not (type(a) == "table" and a.kind == s.kind and a.value == s.value)
+	end
+	return draftValue() ~= (s.value or "")
 end
 
 local function loadDraft()
 	local s = slices()[selected]
 	draft.slice = s
-	draft.kind = s and s.kind or "emote"
+	draft.kind = s and tabFor(s.kind) or "emote"
 	draft.values = {}
-	if s then draft.values[s.kind] = s.value or "" end
+	if s then
+		if draft.kind == "action" then
+			draft.values.action = { kind = s.kind, value = s.value }
+		else
+			draft.values[s.kind] = s.value or ""
+		end
+	end
 end
 
--- Best-effort translation of an action into another kind ("" when there's no sensible one).
+-- An action as macro text, when there's an obvious equivalent.
+local function actionAsMacro(a)
+	local name = ns.Actions.Name(a.kind, a.value)
+	if a.kind == "item" then return "/use item:" .. a.value end
+	if not name then return "" end
+	if a.kind == "spell" or a.kind == "mount" then return "/cast " .. name end
+	if a.kind == "toy" then return "/use " .. name end
+	if a.kind == "equipset" then return "/equipset " .. name end
+	return ""
+end
+
+-- Best-effort translation of a draft into another tab ("" or nil when there's no sensible one).
 local function convert(fromKind, v, toKind)
-	if v == "" or fromKind == toKind then return v end
+	if fromKind == toKind then return v end
+	if fromKind == "action" then
+		return (toKind == "macro" and type(v) == "table") and actionAsMacro(v) or ""
+	end
+	if toKind == "action" then return nil end -- only a drop can fill the action tab
+	if v == "" then return "" end
 	if toKind == "macro" then -- from emote: "WAVE" -> "/wave"
 		local token = ns.Emotes.Resolve(v)
 		return token and ("/" .. token:lower()) or ""
@@ -254,8 +299,10 @@ local function switchKind(newKind)
 	if draft.values[newKind] == nil then
 		local seeded = convert(draft.kind, draftValue(), newKind)
 		local s = draft.slice
-		if seeded == "" and s and s.kind ~= draft.kind then
-			seeded = convert(s.kind, s.value or "", newKind)
+		if (seeded == "" or seeded == nil) and s and tabFor(s.kind) ~= draft.kind then
+			local savedTab = tabFor(s.kind)
+			local savedValue = savedTab == "action" and { kind = s.kind, value = s.value } or (s.value or "")
+			seeded = convert(savedTab, savedValue, newKind)
 		end
 		draft.values[newKind] = seeded
 	end
@@ -295,6 +342,27 @@ local function updateEmoteDropdown(token)
 end
 
 ---------------------------------------------------------------------------
+-- Action box (the drop target for Action slices)
+---------------------------------------------------------------------------
+local function updateActionBox(a)
+	local b = ui.actionBox
+	if type(a) == "table" then
+		local slice = { kind = a.kind, value = a.value }
+		local count = ns.Slices.Count(slice)
+		b.icon:SetTexture(ns.Slices.Icon(slice))
+		b.icon:Show()
+		b.text:SetText(ns.Slices.Label(slice))
+		b.text:SetTextColor(1, 1, 1)
+		b.kind:SetText(kindName(a.kind) .. (count and (" x" .. count) or ""))
+	else
+		b.icon:Hide()
+		b.text:SetText(DROP_PROMPT)
+		b.text:SetTextColor(0.6, 0.6, 0.6)
+		b.kind:SetText("")
+	end
+end
+
+---------------------------------------------------------------------------
 -- Editor
 ---------------------------------------------------------------------------
 local function updateEditor()
@@ -304,26 +372,29 @@ local function updateEditor()
 	ui.kindSwitch:SetValue(draft.kind)
 
 	local value = draftValue()
-	local isMacro, isEmote = draft.kind == "macro", draft.kind == "emote"
+	local isMacro, isEmote, isAction = draft.kind == "macro", draft.kind == "emote", draft.kind == "action"
 	ui.emoteDropdown:SetShown(isEmote)
 	ui.multi:SetShown(isMacro)
+	ui.actionBox:SetShown(isAction)
+	if not isEmote then ns.EmoteMenu.Close() end
 	if isEmote then
 		updateEmoteDropdown(value)
-	else
-		ns.EmoteMenu.Close()
-		if ui.multiBox:GetText() ~= value then
-			ui.multiBox:SetText(value)
-		end
+	elseif isAction then
+		updateActionBox(draft.values.action)
+	elseif ui.multiBox:GetText() ~= value then
+		ui.multiBox:SetText(value)
+		ui.multiScroll:SetVerticalScroll(0)
 	end
 
 	-- The hint (and everything below it) follows whichever action control is visible.
+	local control = (isMacro and ui.multi) or (isAction and ui.actionBox) or ui.emoteDropdown
 	ui.hint:ClearAllPoints()
-	ui.hint:SetPoint("TOPLEFT", isMacro and ui.multi or ui.emoteDropdown, "BOTTOMLEFT", 0, -6)
+	ui.hint:SetPoint("TOPLEFT", control, "BOTTOMLEFT", 0, -6)
 	ui.hint:SetPoint("RIGHT", ui.card, "RIGHT", -12, 0)
 	local hint = KIND_HINT[draft.kind]
-	if draft.kind ~= s.kind and ns.Slices.HasAction(s) then
+	if draft.kind ~= tabFor(s.kind) and ns.Slices.HasAction(s) then
 		hint = ("|cffffd100Saved as %s: %s.|r Save to replace it, or switch back to keep it.\n%s"):format(
-			KIND_LABEL[s.kind], ns.Slices.Label({ kind = s.kind, value = s.value }), hint)
+			kindName(s.kind), ns.Slices.Label({ kind = s.kind, value = s.value }), hint)
 	end
 	ui.hint:SetText(hint)
 	ui.counter:SetText(isMacro and ("%d/%d"):format(#value, ns.Slices.MACRO_MAX) or "")
@@ -341,12 +412,21 @@ end
 function Panel.Save()
 	local s = slices()[selected]
 	if not s then return false end
-	local value, err = ns.Slices.Validate(draft.kind, draftValue())
-	if not value then
-		setStatus(err, true)
-		return false
+	if draft.kind == "action" then
+		local a = draft.values.action
+		if type(a) ~= "table" or not ns.Actions.Valid(a.kind, a.value) then
+			setStatus("Drag something onto the box first.", true)
+			return false
+		end
+		s.kind, s.value = a.kind, a.value
+	else
+		local value, err = ns.Slices.Validate(draft.kind, draftValue())
+		if not value then
+			setStatus(err, true)
+			return false
+		end
+		s.kind, s.value = draft.kind, value
 	end
-	s.kind, s.value = draft.kind, value
 	loadDraft()
 	ns.Changed() -- triggers Panel.Refresh via the change listener
 	setStatus(savedMessage())
@@ -387,6 +467,76 @@ local function commitLabel()
 end
 
 ---------------------------------------------------------------------------
+-- Dropping things from the game onto the wheel
+---------------------------------------------------------------------------
+local undo -- { index =, previous = slice or nil, dropped = slice } for the last drop
+
+local function showUndo()
+	ui.undo:Show()
+	local token = statusToken
+	if C_Timer and C_Timer.After then
+		C_Timer.After(UNDO_SECONDS, function()
+			if token == statusToken then ui.undo:Hide() end
+		end)
+	end
+end
+
+-- Put whatever is on the cursor into slice `index`, or a new slice when `index` is nil.
+-- Returns true if something was dropped.
+local function dropFromCursor(index)
+	local dropped, err = ns.Actions.FromCursor()
+	if not dropped then
+		if err then
+			ClearCursor()
+			setStatus(err, true)
+		end
+		return false
+	end
+	local list = slices()
+	if not index and #list >= ns.MAX_SLICES then
+		setStatus(("The wheel holds at most %d slices."):format(ns.MAX_SLICES), true)
+		return false
+	end
+	ClearCursor()
+	settleDraft()
+
+	local previous
+	if index then
+		previous = list[index]
+		list[index] = dropped
+	else
+		table.insert(list, dropped)
+		index = #list
+	end
+	undo = { index = index, previous = previous, dropped = dropped }
+	selected = index
+	loadDraft()
+	ns.Changed()
+	setStatus(("Slice %d is now %s."):format(index, ns.Slices.Label(dropped)))
+	showUndo()
+	return true
+end
+
+local function undoDrop()
+	local list = slices()
+	if not undo or list[undo.index] ~= undo.dropped then
+		setStatus("Nothing to undo.", true)
+		return
+	end
+	if undo.previous then
+		list[undo.index] = undo.previous
+		selected = undo.index
+	else
+		table.remove(list, undo.index)
+		selected = math.min(selected, #list)
+	end
+	undo = nil
+	loadDraft()
+	ns.Changed()
+	setStatus("Undone.")
+end
+
+---------------------------------------------------------------------------
 -- Preview wheel: click a slice to edit it, drag it onto another slice to swap them
 ---------------------------------------------------------------------------
 local drag          -- { from = i, target = j } while a slice is being dragged
@@ -408,13 +558,20 @@ local function slotTooltip(slot)
 	GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
 	GameTooltip:SetText(ns.Slices.HasAction(s) and ns.Slices.Label(s) or "Empty slice", 1, 1, 1)
 	if ns.Slices.HasAction(s) then
-		GameTooltip:AddLine(KIND_LABEL[s.kind] .. ": " .. s.value, 0.8, 0.8, 0.8, true)
+		local line
+		if ns.Actions.IsAction(s.kind) then
+			local count = ns.Slices.Count(s)
+			line = kindName(s.kind) .. (count and (" x" .. count) or "")
+		else
+			line = kindName(s.kind) .. ": " .. s.value
+		end
+		GameTooltip:AddLine(line, 0.8, 0.8, 0.8, true)
 	end
 	local key = ns.Slices.KeyLabel(slot.index)
 	if key ~= "" then
 		GameTooltip:AddLine("Press " .. key .. " while the wheel is open to fire it.", 0.5, 0.5, 0.5, true)
 	end
-	GameTooltip:AddLine("Click to edit. Drag onto another slice to swap.", 0.5, 0.5, 0.5, true)
+	GameTooltip:AddLine("Click to edit. Drag onto another slice to swap, or drop an item or spell here to replace it.", 0.5, 0.5, 0.5, true)
 	GameTooltip:Show()
 end
 
@@ -455,6 +612,29 @@ local function updateDrag()
 	local x, y = GetCursorPosition()
 	ui.ghost:ClearAllPoints()
 	ui.ghost:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+end
+
+-- While you hold something droppable (picked up from bags, spellbook, ...), say where it can go.
+local holding = false
+local sincePoll = 0
+
+local function setHolding(now)
+	holding = now
+	local border = now and { 1, 0.82, 0, 1 } or { 0.4, 0.4, 0.4, 1 }
+	ui.actionBox:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
+	if now then
+		ui.preview:SetCentre(nil, "Drop here to add", false)
+	else
+		showSelectedInCentre()
+	end
+end
+
+local function updateDropHints(elapsed)
+	sincePoll = sincePoll + elapsed
+	if sincePoll < CURSOR_POLL then return end
+	sincePoll = 0
+	local now = ns.Actions.CursorHasAction()
+	if now ~= holding then setHolding(now) end
 end
 
 local function startDrag(slot)
@@ -534,9 +714,15 @@ local function buildPreview()
 			slot:RegisterForClicks("LeftButtonUp")
 			slot:RegisterForDrag("LeftButton")
 			slot:SetScript("OnClick", function(self)
+				-- Clicking while holding something (picked up from bags etc.) drops it here.
+				if GetCursorInfo and GetCursorInfo() then
+					dropFromCursor(self.index)
+					return
+				end
 				if GetTime() - lastDragEnd < CLICK_AFTER_DRAG then return end
 				Panel.Select(self.index)
 			end)
+			slot:SetScript("OnReceiveDrag", function(self) dropFromCursor(self.index) end)
 			slot:SetScript("OnDragStart", startDrag)
 			slot:SetScript("OnDragStop", function() endDrag() end)
 			slot:SetScript("OnEnter", slotTooltip)
@@ -545,11 +731,25 @@ local function buildPreview()
 	})
 	local pf = ui.preview.frame
 	pf:SetPoint("TOPLEFT", ui.add, "BOTTOMLEFT", 0, -10)
-	ui.preview.centreLabel:SetWidth(84)
 	pf:SetScript("OnUpdate", function(_, elapsed)
-		if drag then updateDrag() end
+		if drag then
+			updateDrag()
+		else
+			updateDropHints(elapsed)
+		end
 		ui.preview:Update(elapsed)
 	end)
+
+	-- The empty centre accepts drops too, adding a new slice.
+	local centre = CreateFrame("Button", nil, pf)
+	centre:SetSize(76, 76)
+	centre:SetPoint("CENTER")
+	centre:RegisterForClicks("LeftButtonUp")
+	centre:SetScript("OnReceiveDrag", function() dropFromCursor(nil) end)
+	centre:SetScript("OnClick", function()
+		if GetCursorInfo and GetCursorInfo() then dropFromCursor(nil) end
+	end)
+	ui.centreDrop = centre
 
 	-- The icon that follows the cursor while dragging.
 	local ghost = CreateFrame("Frame", nil, UIParent)
@@ -567,8 +767,8 @@ local function buildPreview()
 	ghost:Hide()
 	ui.ghost = ghost
 
-	local hint = label(canvas, "Slice 1 is at the top; the rest follow clockwise. The numbers are the keys that fire each slice while the wheel is open.", "GameFontDisableSmall")
-	hint:SetPoint("TOPLEFT", pf, "BOTTOMLEFT", 0, -6)
+	local hint = label(canvas, "Slice 1 is at the top; the rest follow clockwise. Drop items, spells, mounts and more from your bags or spellbook onto a slice, or into the centre to add one.", "GameFontDisableSmall")
+	hint:SetPoint("TOP", ui.preview.caption, "BOTTOM", 0, -6) -- below the name pill; same width as the wheel
 	hint:SetWidth(COLUMN_W)
 
 	ui.add:SetScript("OnClick", function()
@@ -635,6 +835,40 @@ local function buildEmoteDropdown(card)
 	ui.emoteDropdown = b
 end
 
+-- Drop target for Action slices: shows what's there, takes whatever you drop on it.
+local function buildActionBox(card)
+	local b = CreateFrame("Button", nil, card, "BackdropTemplate")
+	b:SetHeight(38)
+	b:SetPoint("TOPLEFT", FIELD_X, -78)
+	b:SetPoint("RIGHT", card, "RIGHT", -12, 0)
+	b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+	b:SetBackdropColor(0, 0, 0, 0.5)
+	b:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+	b:RegisterForClicks("LeftButtonUp")
+
+	b.icon = b:CreateTexture(nil, "ARTWORK")
+	b.icon:SetSize(28, 28)
+	b.icon:SetPoint("LEFT", 5, 0)
+	ns.CropIcon(b.icon)
+	b.text = label(b, "", "GameFontHighlight")
+	b.text:SetPoint("TOPLEFT", 40, -5)
+	b.text:SetPoint("RIGHT", -8, 0)
+	b.text:SetWordWrap(false)
+	b.kind = label(b, "", "GameFontDisableSmall")
+	b.kind:SetPoint("TOPLEFT", b.text, "BOTTOMLEFT", 0, -3)
+	local hover = b:CreateTexture(nil, "HIGHLIGHT")
+	hover:SetPoint("TOPLEFT", 1, -1)
+	hover:SetPoint("BOTTOMRIGHT", -1, 1)
+	hover:SetColorTexture(1, 1, 1, 0.06)
+
+	b:SetScript("OnReceiveDrag", function() dropFromCursor(selected) end)
+	b:SetScript("OnClick", function()
+		if GetCursorInfo and GetCursorInfo() then dropFromCursor(selected) end
+	end)
+	tooltip(b, "Action", "Drag an item, spell, mount, toy, battle pet, macro or equipment set here. You can also drop onto any slice in the preview.")
+	ui.actionBox = b
+end
+
 local function buildEditor()
 	local card = ns.Widgets.Card(canvas)
 	card:SetPoint("TOPLEFT", ui.add, "TOPLEFT", COLUMN_W + 20, 0)
@@ -655,7 +889,7 @@ local function buildEditor()
 	for _, kind in ipairs(KINDS) do
 		items[#items + 1] = { value = kind, text = KIND_LABEL[kind] }
 	end
-	ui.kindSwitch = ns.Widgets.Segmented(card, items, 180, function(kind)
+	ui.kindSwitch = ns.Widgets.Segmented(card, items, 210, function(kind)
 		switchKind(kind)
 		updateEditor()
 	end)
@@ -667,6 +901,7 @@ local function buildEditor()
 	actionLabel:SetPoint("TOPLEFT", 12, -86)
 
 	buildEmoteDropdown(card)
+	buildActionBox(card)
 
 	ui.multi = CreateFrame("Frame", nil, card, "BackdropTemplate")
 	ui.multi:SetHeight(84)
@@ -676,13 +911,41 @@ local function buildEditor()
 	ui.multi:SetBackdropColor(0, 0, 0, 0.5)
 	ui.multi:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
 	ui.multi:EnableMouse(true)
-	ui.multiBox = CreateFrame("EditBox", nil, ui.multi)
+	-- A multi-line EditBox grows with its text instead of clipping it, so it sits in a scroll
+	-- frame: the wheel scrolls it, and typing keeps the cursor in view.
+	local scroll = CreateFrame("ScrollFrame", nil, ui.multi)
+	scroll:SetPoint("TOPLEFT", 6, -6)
+	scroll:SetPoint("BOTTOMRIGHT", -6, 6)
+	ui.multiScroll = scroll
+	ui.multiBox = CreateFrame("EditBox", nil, scroll)
 	ui.multiBox:SetMultiLine(true)
 	ui.multiBox:SetAutoFocus(false)
 	ui.multiBox:SetFontObject(ChatFontNormal)
 	ui.multiBox:SetMaxLetters(ns.Slices.MACRO_MAX)
-	ui.multiBox:SetPoint("TOPLEFT", 6, -6)
-	ui.multiBox:SetPoint("BOTTOMRIGHT", -6, 6)
+	ui.multiBox:SetWidth(1) -- set from the scroll frame once it has a size
+	scroll:SetScrollChild(ui.multiBox)
+	scroll:SetScript("OnSizeChanged", function(_, width) ui.multiBox:SetWidth(width) end)
+	local function scrollTo(offset)
+		scroll:SetVerticalScroll(math.max(0, math.min(offset, scroll:GetVerticalScrollRange())))
+	end
+	scroll:EnableMouseWheel(true)
+	scroll:SetScript("OnMouseWheel", function(_, delta)
+		scrollTo(scroll:GetVerticalScroll() - delta * 14)
+	end)
+	-- y is the cursor's offset from the top of the box (negative), h its line height. The scroll
+	-- range lags a frame behind new lines, so the move is applied on the next frame.
+	ui.multiBox:SetScript("OnCursorChanged", function(_, _, y, _, h)
+		local top = -y
+		C_Timer.After(0, function()
+			local current, height = scroll:GetVerticalScroll(), scroll:GetHeight()
+			if top < current then
+				scrollTo(top)
+			elseif top + h > current + height then
+				scrollTo(top + h - height)
+			end
+		end)
+	end)
+	-- Clicks on the empty part of the box (below the text) still focus it.
 	ui.multi:SetScript("OnMouseDown", function() ui.multiBox:SetFocus() end)
 	ui.multiBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 	ui.multiBox:SetScript("OnEditFocusGained", function() ui.multi:SetBackdropBorderColor(1, 0.82, 0, 1) end)
@@ -723,9 +986,13 @@ local function buildEditor()
 	tooltip(ui.test, "Test", "Performs this emote now. Macro slices can only fire from the wheel.")
 
 	-- Status is pinned to the card's bottom edge so messages never shift the layout.
+	ui.undo = button(card, "Undo", 60)
+	ui.undo:SetPoint("BOTTOMRIGHT", -12, 8)
+	ui.undo:SetScript("OnClick", undoDrop)
+	ui.undo:Hide()
 	ui.status = label(card, "", "GameFontHighlightSmall")
 	ui.status:SetPoint("BOTTOMLEFT", 12, 10)
-	ui.status:SetPoint("RIGHT", card, "RIGHT", -12, 0)
+	ui.status:SetPoint("RIGHT", ui.undo, "LEFT", -8, 0)
 	ui.status:SetHeight(24)
 	ui.status:SetJustifyV("BOTTOM")
 
@@ -809,7 +1076,11 @@ function Panel.Refresh()
 		end
 		ui.preview:SetEmphasis(selected)
 		ui.preview:SetHighlight(selected) -- eases from the previous selection
-		showSelectedInCentre()
+		if holding then
+			setHolding(true)
+		else
+			showSelectedInCentre()
+		end
 	end
 	ui.add:SetEnabled(#list < ns.MAX_SLICES)
 	ui.remove:SetEnabled(#list > 1)
@@ -846,6 +1117,11 @@ canvas.OnRefresh = function() Panel.Refresh() end
 
 ns.OnChanged(function()
 	if canvas:IsShown() then Panel.Refresh() end
+end)
+
+-- Item names arriving, bag counts changing.
+ns.OnVisualsStale(function()
+	if canvas:IsShown() and built and not drag then Panel.Refresh() end
 end)
 
 local function registerAppearance(parent)

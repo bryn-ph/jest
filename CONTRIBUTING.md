@@ -15,7 +15,7 @@ New-Item -ItemType Junction -Path "$wow\Interface\AddOns\Jest" -Target "$PWD\Jes
 
 | Path | |
 |---|---|
-| `Jest/Core/` | Namespace and events, saved variables (validation and migrations), emote data and helpers |
+| `Jest/Core/` | Namespace and events, saved variables (validation and migrations), emote data, action kinds (`Actions.lua`: items, spells, mounts...) and slice helpers |
 | `Jest/Secure/` | Protected frames and the restricted snippet. This is what fires slices, including in combat. |
 | `Jest/UI/` | Wheel drawing (`WheelView`, shared with the options preview), the in-game wheel (`Skin`), geometry |
 | `Jest/Config/` | Options panel, popups, widgets and slash commands |

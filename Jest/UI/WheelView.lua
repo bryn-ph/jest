@@ -1,4 +1,4 @@
--- WheelView: draws a wheel (ring segments, slice icons, eased gold highlight, centre icon/label).
+-- WheelView: draws a wheel (ring segments, slice icons, eased gold highlight, centre icon, name pill).
 -- Purely visual and insecure. Used by the in-game wheel (UI/Skin.lua) and by the preview in the
 -- options panel, so the two always look the same.
 --
@@ -7,7 +7,7 @@
 --   view:Layout(slices, { radius =, deadZone =, iconSize =, centreIconSize = })
 --   view:SetHighlight(i)  -- gold segment eases to slice i (nil fades it out)
 --   view:SetEmphasis(i)   -- slice i's icon grows (nil = none)
---   view:SetCentre(texture, text, dim)
+--   view:SetCentre(texture, text, dim)  -- centre icon, plus the name in the pill under the ring
 --   view:Update(elapsed)  -- call every frame while shown, drives the easing
 local addonName, ns = ...
 
@@ -29,6 +29,9 @@ local EMPHASIS_SCALE = 1.2
 local WEDGE_COLOR = { 0.05, 0.05, 0.07, 0.62 }
 local WEDGE_EMPTY_ALPHA = 0.32
 local GOLD = { 1, 0.82, 0.2 }
+local CAPTION_GAP = 4          -- between the wheel's outer edge and the name pill
+local CAPTION_PAD_X, CAPTION_PAD_Y = 10, 5
+local KEY_FONT_SCALE = 0.85    -- slice key numbers, relative to NumberFontNormalSmall
 
 local function addCircleMask(parent, texture)
 	local mask = parent:CreateMaskTexture()
@@ -77,11 +80,26 @@ function View.Create(parent, opts)
 	v.hl:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 0.38)
 
 	v.centreIcon = f:CreateTexture(nil, "ARTWORK")
+	v.centreIcon:SetPoint("CENTER")
 	ns.CropIcon(v.centreIcon)
 	addCircleMask(f, v.centreIcon)
-	v.centreLabel = f:CreateFontString(nil, "OVERLAY", opts.labelFont or "GameFontHighlightLarge")
-	v.centreLabel:SetPoint("TOP", v.centreIcon, "BOTTOM", 0, -3)
-	v.centreLabel:SetWordWrap(false)
+
+	-- The hovered slice's name, in a pill just below the ring, where long names have room.
+	-- Placed and sized in Layout / SetCentre.
+	local caption = CreateFrame("Frame", nil, f, "BackdropTemplate")
+	caption:SetBackdrop({
+		bgFile = "Interface\\Buttons\\WHITE8x8",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		edgeSize = 12,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+	caption:SetBackdropColor(0, 0, 0, 0.75)
+	caption:Hide()
+	v.caption = caption
+	v.captionText = caption:CreateFontString(nil, "OVERLAY", opts.labelFont or "GameFontHighlightLarge")
+	v.captionText:SetPoint("CENTER")
+	v.captionText:SetWordWrap(false)
+	v.captionMaxWidth = 200
 	return v
 end
 
@@ -131,8 +149,13 @@ function ViewMixin:GetSlot(i)
 		hover:SetAllPoints(s.icon)
 	end
 
+	-- Quick-use key number, centred on the icon's top edge (the item count has the bottom right).
 	s.key = s:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-	s.key:SetPoint("TOPLEFT", -3, 3)
+	s.key:SetPoint("CENTER", s, "TOP", 0, 0)
+	local font, size, flags = s.key:GetFont()
+	if font and size then s.key:SetFont(font, size * KEY_FONT_SCALE, flags) end
+	s.count = s:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+	s.count:SetPoint("BOTTOMRIGHT", 3, -3)
 
 	s.scale, s.target, s.x, s.y = 1, 1, 0, 0
 	self.slots[i] = s
@@ -167,7 +190,12 @@ function ViewMixin:Layout(slices, o)
 	self.backdrop:SetSize(2 * outer, 2 * outer)
 	self.deadDisc:SetSize(2 * o.deadZone, 2 * o.deadZone)
 	self.centreIcon:SetSize(o.centreIconSize, o.centreIconSize)
-	self.centreIcon:SetPoint("CENTER", 0, o.centreIconSize * 0.28)
+	self.caption:ClearAllPoints()
+	self.caption:SetPoint("TOP", f, "CENTER", 0, -(outer + CAPTION_GAP))
+	self.captionMaxWidth = 2 * outer
+	-- Fixed height, so things anchored below the pill don't move as the text changes.
+	local _, fontSize = self.captionText:GetFont()
+	self.caption:SetHeight(math.ceil((fontSize or 12) * 1.15) + 2 * CAPTION_PAD_Y)
 
 	self.hasArt = n >= WEDGE_MIN and n <= WEDGE_MAX
 	self.backdrop:SetShown(not self.hasArt)
@@ -202,12 +230,6 @@ function ViewMixin:Layout(slices, o)
 		s.target = 1 -- current scale is kept so re-layouts don't pop
 		s:ClearAllPoints()
 		placeSlot(self, s)
-		s.iconTexture = ns.Slices.Icon(slice)
-		s.icon:SetTexture(s.iconTexture)
-		s.label = ns.Slices.Label(slice)
-		s.empty = not ns.Slices.HasAction(slice)
-		s.isEmote = ns.Slices.IsEmote(slice)
-		s.icon:SetAlpha(s.empty and 0.35 or 1)
 		s.key:SetText(ns.Slices.KeyLabel(i))
 		s.glow:Hide()
 		s:Show()
@@ -216,9 +238,30 @@ function ViewMixin:Layout(slices, o)
 		self.slots[i]:Hide()
 	end
 	self.emphasis = nil
+	self:RefreshContent(slices)
 
 	if n ~= oldN or self.hasArt ~= hadArt then
 		self:ResetHighlight()
+	end
+end
+
+-- Update icons, labels and item counts in place (names load late, counts change as you use
+-- things). Doesn't move anything, so it is safe while the wheel is open.
+function ViewMixin:RefreshContent(slices)
+	for i = 1, self.n do
+		local s, slice = self.slots[i], slices[i]
+		if s and slice then
+			s.iconTexture = ns.Slices.Icon(slice)
+			s.icon:SetTexture(s.iconTexture)
+			s.label = ns.Slices.Label(slice)
+			s.empty = not ns.Slices.HasAction(slice)
+			s.isEmote = ns.Slices.IsEmote(slice)
+			local count = ns.Slices.Count(slice)
+			s.count:SetText(count and (count > 999 and "*" or tostring(count)) or "")
+			s.outOfStock = count == 0
+			s.icon:SetAlpha(s.empty and 0.35 or 1)
+			s.icon:SetDesaturated(s.outOfStock or s.locked or false)
+		end
 	end
 end
 
@@ -285,12 +328,25 @@ function ViewMixin:SetCentre(texture, text, dim)
 	else
 		self.centreIcon:Hide()
 	end
-	self.centreLabel:SetText(text or "")
-	if dim then
-		self.centreLabel:SetTextColor(0.6, 0.6, 0.6)
-	else
-		self.centreLabel:SetTextColor(1, 1, 1)
+	local label = self.captionText
+	label:SetText(text or "")
+	if not text or text == "" then
+		self.caption:Hide()
+		return
 	end
+	-- Fit the pill to the text; names wider than the wheel end in "...".
+	label:SetWidth(0)
+	local width = math.min(label:GetStringWidth() or 0, self.captionMaxWidth - 2 * CAPTION_PAD_X)
+	label:SetWidth(width)
+	self.caption:SetWidth(width + 2 * CAPTION_PAD_X)
+	if dim then
+		label:SetTextColor(0.6, 0.6, 0.6)
+		self.caption:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.9)
+	else
+		label:SetTextColor(1, 1, 1)
+		self.caption:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 0.6)
+	end
+	self.caption:Show()
 end
 
 function ViewMixin:Update(elapsed)

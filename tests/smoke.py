@@ -37,6 +37,7 @@ local function newObj(name)
   function m.ClearFocus(self) self.__focus = false end
   function m.HasFocus(self) return self.__focus == true end
   function m.SetTexCoord(self, ...) __texcoords = __texcoords or {}; __texcoords[self] = { ... } end
+  function m.SetDesaturated(self, v) self.__desat = not not v end
   function m.GetCenter(self) return self.__cx or 300, self.__cy or 300 end
   function m.SetText(self, t) self.__text = t end
   function m.GetText(self) return self.__text or '' end
@@ -59,6 +60,28 @@ IsMouselooking = function() return false end
 -- mock character: race 1 (Human), male, unless a test changes __race / __sex
 UnitRace = function() if __race == false then return nil end return 'Human', 'Human', __race or 1 end
 UnitSex = function() return __sex or 2 end
+-- cursor and the things that can be dragged onto the wheel
+GetCursorInfo = function() if __cursor then return unpack(__cursor) end end
+ClearCursor = function() __cursor = nil end
+__items = {}
+C_Item = {
+  GetItemCount = function(id) return (__items[id] or {}).count or 0 end,
+  GetItemNameByID = function(id) local it = __items[id]; if it and it.loaded ~= false then return it.name end end,
+  GetItemIconByID = function(id) return __items[id] and __items[id].icon end,
+  RequestLoadItemDataByID = function(id) __requested = id end,
+}
+PlayerHasToy = function(id) return __items[id] and __items[id].toy or false end
+C_Spell = { GetSpellInfo = function(id) if id == 2061 then return { name = 'Flash Heal', iconID = 135907 } end end }
+C_MountJournal = { GetMountInfoByID = function(id) if id == 6 then return 'Brown Horse', 458, 132226 end end }
+C_PetJournal = {
+  GetPetInfoByPetID = function(g) return 1, nil, 1, 0, 0, 0, false, 'Mechanical Squirrel', 132599 end,
+  SummonPetByGUID = function(g) __summoned = g end,
+}
+C_EquipmentSet = {
+  GetEquipmentSetID = function(n) if n == 'Tank' then return 3 end end,
+  GetEquipmentSetInfo = function(id) if id == 3 then return 'Tank', 132341 end end,
+}
+GetMacroInfo = function(i) if i == 121 then return 'Party', 136243, '/cheer\n/dance\n' end end
 PlaySound = function() end
 SOUNDKIT = { U_CHAT_SCROLL_BUTTON = 1, IG_MAINMENU_OPTION_CHECKBOX_ON = 2, IG_MAINMENU_OPTION_CHECKBOX_OFF = 3 }
 ClearOverrideBindings = function() end
@@ -286,7 +309,7 @@ local pv = ui.preview
 check(pv.n == 9, 'preview shows 9 slices')
 check(pv.slots[1].iconTexture == ns.Slices.Icon(ns.DB.Wheel().slices[1]), 'preview slot icon matches slice')
 check(pv.highlighted == 9 and pv.emphasis == 9, 'preview highlights the selected slice')
-check(pv.centreLabel:GetText() == 'Empty', 'preview centre shows selected (empty) slice')
+check(pv.captionText:GetText() == 'Empty', 'preview centre shows selected (empty) slice')
 -- drag slice 9 onto slice 8 (8 of 9 sits at 280 deg: left and slightly up of centre)
 pv.frame.__cx, pv.frame.__cy = 300, 300
 local slice8 = ns.DB.Wheel().slices[8]
@@ -297,7 +320,7 @@ check(pv.slots[9].__alpha == 0.35, 'dragged slot dimmed')
 __cx, __cy = 300 - 87, 300 + 15
 pv.frame.__scripts.OnUpdate(pv.frame, 0.016)
 check(pv.highlighted == 8, 'drop target highlighted, got ' .. tostring(pv.highlighted))
-check(pv.centreLabel:GetText() == 'Swap here', 'centre explains the drop')
+check(pv.captionText:GetText() == 'Swap here', 'centre explains the drop')
 pv.slots[9].__scripts.OnDragStop(pv.slots[9])
 check(not ui.ghost.__shown, 'ghost hidden after drop')
 check(ns.DB.Wheel().slices[9] == slice8 and ns.DB.Wheel().slices[8].value == '', 'slices 8 and 9 swapped')
@@ -312,7 +335,7 @@ local before = ns.DB.Wheel().slices[2]
 pv.slots[2].__scripts.OnDragStart(pv.slots[2])
 __cx, __cy = 300, 300
 pv.frame.__scripts.OnUpdate(pv.frame, 0.016)
-check(pv.centreLabel:GetText() == 'Cancel', 'centre says cancel over the dead zone')
+check(pv.captionText:GetText() == 'Cancel', 'centre says cancel over the dead zone')
 pv.slots[2].__scripts.OnDragStop(pv.slots[2])
 check(ns.DB.Wheel().slices[2] == before, 'drop in centre changes nothing')
 check(pv.highlighted == 8, 'highlight returns to the selection')
@@ -579,6 +602,121 @@ check(ns.Slices.ParseIcon(string.rep('a/', 200)) == nil, 'over-long paths reject
 check(ns.Escape('a|cffff0000b|r') == 'a||cffff0000b||r', 'pipes escaped for chat')
 local _, err = ns.Slices.Validate('emote', '|Hitem:1|h')
 check(err and err:find("'||Hitem:1||h'", 1, true), 'error messages escape user input, got ' .. tostring(err))
+
+-- ===== action slices: anything draggable onto the wheel =====
+local A = ns.Actions
+__items[5512] = { name = 'Healthstone', icon = 135230, count = 3 }
+__items[54452] = { name = 'Ethereal Portal', icon = 777, count = 0, toy = true }
+local function fromCursor(...) __cursor = { ... }; return A.FromCursor() end
+local c = fromCursor('item', 5512, 'link')
+check(c.kind == 'item' and c.value == 5512, 'cursor: item')
+check(fromCursor('item', 54452).kind == 'toy', 'cursor: learned toy (none in bags) becomes a toy')
+c = fromCursor('spell', 12, 'spell', 2061, 2061)
+check(c.kind == 'spell' and c.value == 2061, 'cursor: spell uses the spell ID (4th return)')
+check(fromCursor('mount', 6, 1).value == 6, 'cursor: mount ID')
+check(fromCursor('battlepet', 'BattlePet-0-00000ABCDEF0').kind == 'pet', 'cursor: battle pet')
+c = fromCursor('macro', 121)
+check(c.kind == 'macro' and c.value == '/cheer\n/dance' and c.label == 'Party' and c.icon == 136243, 'cursor: macro copies body, name and icon')
+c = fromCursor('equipmentset', 3)
+check(c.kind == 'equipset' and c.value == 'Tank', 'cursor: equipment set by ID becomes its name')
+local none, why = fromCursor('money', 100)
+check(none == nil and why ~= nil, 'cursor: unusable things give a reason')
+__cursor = nil
+local empty, emptyWhy = A.FromCursor()
+check(empty == nil and emptyWhy == nil, 'cursor: empty is silent')
+
+-- dropping in the options panel
+__canvas:Show(); __canvas.__scripts.OnShow(__canvas)
+local pv = ui.preview
+local list = function() return ns.DB.Wheel().slices end
+local before2 = list()[2]
+__cursor = { 'item', 5512 }
+pv.slots[2].__scripts.OnReceiveDrag(pv.slots[2])
+check(list()[2].kind == 'item' and list()[2].value == 5512, 'drop onto a slice replaces it')
+check(__cursor == nil, 'cursor cleared after a drop')
+check(btn.__attrs['type-slice2'] == 'item' and btn.__attrs['item-slice2'] == 'item:5512', 'item: secure item attributes')
+check(ui.status:GetText():find('Healthstone', 1, true) and ui.undo.__shown, 'drop reports and offers undo')
+check(ui.editorTitle:GetText() == 'Slice 2' and ui.actionBox.__shown, 'editor jumps to the slice, Action tab')
+check(ui.actionBox.text:GetText() == 'Healthstone' and ui.actionBox.kind:GetText() == 'Item x3', 'action box shows name, kind and count, got ' .. ui.actionBox.kind:GetText())
+check(pv.slots[2].count:GetText() == '3', 'item count on the preview slice')
+ui.undo:Click()
+check(list()[2] == before2, 'undo restores the replaced slice')
+check(btn.__attrs['item-slice2'] == nil and btn.__attrs['type-slice2'] == 'jest', 'undo re-applies the secure button')
+
+local n0 = #list()
+__cursor = { 'spell', 1, 'spell', 2061 }
+ui.centreDrop.__scripts.OnReceiveDrag(ui.centreDrop)
+check(#list() == n0 + 1 and list()[n0 + 1].kind == 'spell', 'drop in the centre adds a slice')
+check(btn.__attrs['type-slice' .. (n0 + 1)] == 'spell' and btn.__attrs['spell-slice' .. (n0 + 1)] == 2061, 'spell: secure spell attributes')
+check(pv.slots[n0 + 1].label == 'Flash Heal', 'spell name on the wheel')
+ui.undo:Click()
+check(#list() == n0, 'undo removes an added slice')
+
+__cursor = { 'mount', 6 }
+pv.slots[3].__scripts.OnClick(pv.slots[3])
+check(list()[3].kind == 'mount', 'clicking a slice while holding something drops it')
+check(btn.__attrs['type-slice3'] == 'spell' and btn.__attrs['spell-slice3'] == 458, 'mount casts its summon spell')
+
+__cursor = { 'battlepet', 'BattlePet-0-00000ABCDEF0' }
+ui.actionBox.__scripts.OnReceiveDrag(ui.actionBox)
+check(list()[3].kind == 'pet' and btn.__attrs['type-slice3'] == 'jest', 'pet uses the insecure runner')
+btn:jest(nil, 'slice3')
+check(__summoned == 'BattlePet-0-00000ABCDEF0', 'pet summoned when fired')
+
+__cursor = { 'item', 54452 }
+pv.slots[4].__scripts.OnReceiveDrag(pv.slots[4])
+check(btn.__attrs['type-slice4'] == 'toy' and btn.__attrs['toy-slice4'] == 54452, 'toy: secure toy attributes')
+__cursor = { 'equipmentset', 3 }
+pv.slots[5].__scripts.OnReceiveDrag(pv.slots[5])
+check(btn.__attrs['type-slice5'] == 'equipmentset' and btn.__attrs['equipmentset-slice5'] == 'Tank', 'equipment set attributes')
+__cursor = { 'macro', 121 }
+pv.slots[6].__scripts.OnReceiveDrag(pv.slots[6])
+check(list()[6].label == 'Party' and btn.__attrs['macrotext-slice6'] == '/cheer\n/dance', 'dropped macro becomes a macro slice')
+
+local slice7 = list()[7]
+__cursor = { 'money', 5 }
+pv.slots[7].__scripts.OnReceiveDrag(pv.slots[7])
+check(list()[7] == slice7 and __cursor == nil and ui.status:GetText():find("can't", 1, true), 'unusable drop rejected, cursor cleared')
+
+__items[5512].count = 0
+__cursor = { 'item', 5512 }
+pv.slots[8].__scripts.OnReceiveDrag(pv.slots[8])
+check(pv.slots[8].count:GetText() == '0' and pv.slots[8].icon.__desat, 'used-up item shows 0 and greys out')
+
+__items[999] = { name = 'Late Loader', icon = 5, count = 1, loaded = false }
+__cursor = { 'item', 999 }
+pv.slots[1].__scripts.OnReceiveDrag(pv.slots[1])
+check(pv.slots[1].label == 'Item' and __requested == 999, 'unloaded item shows a placeholder and requests data')
+__items[999].loaded = true
+ns.RefreshVisuals()
+check(pv.slots[1].label == 'Late Loader', 'name fills in once the data arrives')
+check(skinView.slots[1].label == 'Late Loader', 'the in-game wheel updates too')
+
+pv.slots[1].__scripts.OnEnter(pv.slots[1]) -- tooltip handles action slices
+ns.Panel.Select(7)
+ui.kind.action:Click()
+check(ui.actionBox.text:GetText() == 'Drag something here', 'empty action tab prompts a drop')
+ui.save:Click()
+check(ui.status:GetText() == 'Drag something onto the box first.', 'saving an empty action explains why')
+ui.revert:Click()
+__cursor = { 'spell', 1, 'spell', 2061 }
+pv.slots[7].__scripts.OnReceiveDrag(pv.slots[7])
+ui.kind.macro:Click()
+check(ui.multiBox:GetText() == '/cast Flash Heal', 'action -> macro converts spells to /cast')
+ui.revert:Click()
+
+-- saved data: valid actions kept, invalid ones dropped
+JestDB = { version = 2, profiles = { Default = { wheels = { { slices = {
+	{ kind = 'item', value = 5512 }, { kind = 'item', value = -1 }, { kind = 'spell', value = '2061' },
+	{ kind = 'pet', value = 'notapet' }, { kind = 'mount', value = 6 },
+} } } } } }
+JestCharDB = { profile = 'Default' }
+ns.DB.Init()
+check(#list() == 2 and list()[1].kind == 'item' and list()[2].kind == 'mount', 'invalid action slices dropped on load')
+SlashCmdList.JEST('set 1 spell 2061')
+check(list()[1].kind == 'spell' and list()[1].value == 2061, 'slash set spell <id>')
+SlashCmdList.JEST('set 1 item abc')
+check(list()[1].kind == 'spell', 'slash rejects a non-numeric ID')
 
 return fails
 """ + " end")

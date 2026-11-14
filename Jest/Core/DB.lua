@@ -48,14 +48,22 @@ end
 
 -- Saved variables are plain files that users and other addons can edit. Everything below makes
 -- sure only well-formed data reaches the secure button (macro text, attributes) and the UI.
+-- Action slices with invalid values are dropped rather than emptied: they can't be edited by
+-- typing, so an empty one would only be confusing.
 
 local function cleanSlice(s)
-	if type(s) ~= "table" or (s.kind ~= "emote" and s.kind ~= "macro") then
+	if type(s) ~= "table" then return nil end
+	local value
+	if s.kind == "emote" or s.kind == "macro" then
+		value = type(s.value) == "string" and s.value or ""
+		if s.kind == "macro" then
+			value = value:sub(1, ns.Slices.MACRO_MAX)
+		end
+	elseif ns.Actions.IsAction(s.kind) then
+		if not ns.Actions.Valid(s.kind, s.value) then return nil end
+		value = s.value
+	else
 		return nil
-	end
-	local value = type(s.value) == "string" and s.value or ""
-	if s.kind == "macro" then
-		value = value:sub(1, ns.Slices.MACRO_MAX)
 	end
 	local icon = s.icon
 	if not (type(icon) == "number" or (type(icon) == "string" and #icon <= ICON_PATH_MAX)) then

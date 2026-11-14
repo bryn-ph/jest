@@ -20,6 +20,7 @@ Core\Defaults.lua
 Core\DB.lua
 Core\EmoteData.lua
 Core\Emotes.lua
+Core\Actions.lua
 Core\Slices.lua
 UI\Geometry.lua
 UI\WheelView.lua
