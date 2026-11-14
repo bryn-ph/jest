@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0-alpha
 
 - Slices can now hold anything you can drag: items and consumables, spells, mounts, toys, battle pets, macros and equipment sets. They fire in combat wherever the game allows.
 - Drag things from your bags, spellbook or collections onto the wheel preview: drop on a slice to replace it (with Undo), or in the centre to add one. The editor has a new **Action** tab with its own drop box.
