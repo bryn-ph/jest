@@ -33,7 +33,10 @@ local function describe(i, s)
 		i, Escape(ns.Slices.Icon(s)), Escape(ns.Slices.Label(s)), s.kind, Escape(s.value))
 end
 
-local KIND_ALIASES = { emote = "emote", e = "emote", macro = "macro", m = "macro" }
+local KIND_ALIASES = {
+	emote = "emote", e = "emote", macro = "macro", m = "macro",
+	item = "item", i = "item", spell = "spell", s = "spell", toy = "toy",
+}
 
 add("list", "list - show the wheel's slices", function()
 	Print(("Profile '%s':"):format(Escape(ns.DB.ProfileName())))
@@ -42,7 +45,7 @@ add("list", "list - show the wheel's slices", function()
 	end
 end)
 
-add("set", "set <n> emote <name> || macro <text> - set a slice (\\n for new lines; /e <text> for a custom emote line)", function(rest)
+add("set", "set <n> emote <name> || macro <text> || item <id> || spell <id> || toy <id> - set a slice (\\n for new lines; /e <text> for a custom emote line)", function(rest)
 	local nText, kindText, value = rest:match("^(%S+)%s+(%S+)%s+(.+)$")
 	if not nText then
 		Print("Usage: /jest " .. commands.set.usage)
@@ -52,7 +55,7 @@ add("set", "set <n> emote <name> || macro <text> - set a slice (\\n for new line
 	if not i then return end
 	local kind = KIND_ALIASES[kindText:lower()]
 	if not kind then
-		Print("Kind must be emote or macro. For a custom emote line, use: macro /e <text>")
+		Print("Kind must be emote, macro, item, spell or toy. For a custom emote line, use: macro /e <text>")
 		return
 	end
 	if kind == "macro" then

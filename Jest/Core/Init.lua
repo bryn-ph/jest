@@ -66,6 +66,38 @@ function ns.Changed()
 	end
 end
 
+-- Display refresh -------------------------------------------------------------
+-- Item names load asynchronously and bag counts change; neither needs the secure wheel
+-- re-applied (which combat would defer), only a redraw. Bursts are batched into one.
+
+local visualListeners = {}
+local refreshQueued = false
+
+function ns.OnVisualsStale(fn)
+	table.insert(visualListeners, fn)
+end
+
+local function refreshVisuals()
+	refreshQueued = false
+	for _, fn in ipairs(visualListeners) do
+		fn()
+	end
+end
+
+function ns.RefreshVisuals()
+	if refreshQueued then return end
+	if C_Timer and C_Timer.After then
+		refreshQueued = true
+		C_Timer.After(0.1, refreshVisuals)
+	else
+		refreshVisuals()
+	end
+end
+
+for _, event in ipairs({ "ITEM_DATA_LOAD_RESULT", "BAG_UPDATE_DELAYED", "SPELLS_CHANGED", "EQUIPMENT_SETS_CHANGED" }) do
+	ns.On(event, function() ns.RefreshVisuals() end)
+end
+
 ns.On("ADDON_LOADED", function(_, name)
 	if name ~= addonName then return end
 	ns.Off("ADDON_LOADED")

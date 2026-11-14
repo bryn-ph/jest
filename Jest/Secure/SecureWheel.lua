@@ -8,7 +8,9 @@ ns.SecureWheel = SW
 
 local btn, anchor
 local pending = false
-local emoteTokens = {} -- [slice index] = emote token, read by the custom "jest" action type
+-- [slice index] = function, run by the custom "jest" action type for slices that have no
+-- secure action type of their own (emotes, battle pets).
+local runners = {}
 
 local function performEmote(token)
 	local perform = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
@@ -29,13 +31,13 @@ local function create()
 	btn:RegisterForClicks("AnyDown", "AnyUp")
 	btn:SetAttribute("useOnKeyDown", false) -- act on key up; key down only opens the wheel
 
-	-- type = "jest": SecureActionButtonTemplate calls this method (as insecure code) for emote
-	-- slices, so they use the emote API rather than macro text.
+	-- type = "jest": SecureActionButtonTemplate calls this method (as insecure code) for slices
+	-- without a secure action type, e.g. emotes, which use the emote API rather than macro text.
 	function btn:jest(_, button)
 		local i = tonumber(button and button:match("^slice(%d+)$"))
-		local token = i and emoteTokens[i]
-		if token then
-			performEmote(token)
+		local run = i and runners[i]
+		if run then
+			run()
 		end
 	end
 
@@ -69,19 +71,33 @@ function SW.Apply()
 	local slices = ns.DB.Wheel().slices
 
 	for i = 1, ns.MAX_SLICES do
-		btn:SetAttribute("type-slice" .. i, nil)
-		btn:SetAttribute("macrotext-slice" .. i, nil)
-		emoteTokens[i] = nil
+		local suffix = "-slice" .. i
+		btn:SetAttribute("type" .. suffix, nil)
+		for _, attribute in ipairs(ns.Actions.ATTRIBUTES) do
+			btn:SetAttribute(attribute .. suffix, nil)
+		end
+		runners[i] = nil
 	end
 
 	for i, s in ipairs(slices) do
 		if ns.Slices.HasAction(s) then
+			local suffix = "-slice" .. i
 			if s.kind == "macro" then
-				btn:SetAttribute("type-slice" .. i, "macro")
-				btn:SetAttribute("macrotext-slice" .. i, s.value)
+				btn:SetAttribute("type" .. suffix, "macro")
+				btn:SetAttribute("macrotext" .. suffix, s.value)
+			elseif s.kind == "emote" then
+				local token = s.value
+				btn:SetAttribute("type" .. suffix, "jest")
+				runners[i] = function() performEmote(token) end
 			else
-				btn:SetAttribute("type-slice" .. i, "jest")
-				emoteTokens[i] = s.value
+				local actionType, attribute, value, run = ns.Actions.Binding(s.kind, s.value)
+				if actionType then
+					btn:SetAttribute("type" .. suffix, actionType)
+					btn:SetAttribute(attribute .. suffix, value)
+				elseif run then
+					btn:SetAttribute("type" .. suffix, "jest")
+					runners[i] = run
+				end
 			end
 		end
 	end
@@ -122,6 +138,15 @@ ns.On("PLAYER_REGEN_ENABLED", function()
 	end
 	if pending and SW.Apply() then
 		ns.Print("Queued changes applied.")
+	end
+end)
+
+-- Collections (e.g. the mount journal a mount slice reads its spell from) may not be ready when
+-- the addon loads, so apply once more on entering the world.
+ns.On("PLAYER_ENTERING_WORLD", function()
+	ns.Off("PLAYER_ENTERING_WORLD")
+	if btn and not InCombatLockdown() and JestDB then
+		SW.Apply()
 	end
 end)
 

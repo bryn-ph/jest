@@ -7,7 +7,7 @@ local Skin = {}
 ns.Skin = Skin
 
 local ICON_SIZE = 40
-local CENTRE_ICON_SIZE = 36
+local CENTRE_ICON_SIZE = 44
 local HOVER_SOUND_GAP = 0.03   -- seconds; throttles tick spam when sweeping across slices
 local WATCHDOG_SECONDS = 15    -- out of combat, force-close a wheel open this long (lost key-up)
 
@@ -47,7 +47,7 @@ frame:EnableMouse(false)
 frame:Hide()
 
 local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-hint:SetPoint("TOP", frame, "BOTTOM", 0, 4)
+hint:SetPoint("TOP", view.caption, "BOTTOM", 0, -4) -- under the name pill
 
 Skin._view = view -- internal; used by the tests
 
@@ -87,7 +87,7 @@ local function updateCentre(idx)
 	local s = idx and view.slots[idx]
 	if s and not s.empty then
 		view:SetCentre(s.iconTexture, s.label)
-		view.centreIcon:SetDesaturated(s.locked)
+		view.centreIcon:SetDesaturated(s.locked or s.outOfStock or false)
 	else
 		view:SetCentre(nil, idx and "Empty" or "Cancel", true)
 	end
@@ -136,6 +136,12 @@ function Skin.Rebuild()
 	hovered = nil
 end
 
+ns.OnVisualsStale(function()
+	if view.n > 0 then
+		view:RefreshContent(ns.DB.Wheel().slices)
+	end
+end)
+
 function Skin.Open()
 	openX, openY = cursorUI() -- same point the snippet anchors to via $cursor
 	local cx, cy = GetCursorPosition()
@@ -148,8 +154,8 @@ function Skin.Open()
 	for i = 1, view.n do
 		local s = view.slots[i]
 		s.locked = lockdown and s.isEmote or false
-		s.icon:SetDesaturated(s.locked)
 	end
+	view:RefreshContent(ns.DB.Wheel().slices) -- current counts; greys locked and used-up slices
 
 	if IsMouselooking() then
 		hint:SetText("Release right-click to aim, or press 1-" .. math.min(view.n, 9))

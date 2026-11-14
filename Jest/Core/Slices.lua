@@ -9,9 +9,13 @@ local ICON_PATH_MAX = 260
 
 -- "emote": a built-in emote token, performed through the emote API.
 -- "macro": macro text run by the secure button (a custom emote line is "/e ...").
+-- Anything else is an action kind from Core/Actions.lua (item, spell, mount, toy, pet, equipset).
 function Slices.HasAction(s)
-	return s and (s.kind == "emote" or s.kind == "macro")
-		and type(s.value) == "string" and s.value ~= ""
+	if not s then return false end
+	if s.kind == "emote" or s.kind == "macro" then
+		return type(s.value) == "string" and s.value ~= ""
+	end
+	return ns.Actions.Valid(s.kind, s.value)
 end
 
 function Slices.IsEmote(s)
@@ -22,6 +26,9 @@ function Slices.Icon(s)
 	if not s then return ns.FALLBACK_ICON end
 	if s.icon then return s.icon end
 	if s.kind == "emote" then return ns.EmoteIcons[s.value] or ns.FALLBACK_ICON end
+	if ns.Actions.IsAction(s.kind) then
+		return ns.Actions.Icon(s.kind, s.value) or ns.FALLBACK_ICON
+	end
 	return ns.KindIcons[s.kind] or ns.FALLBACK_ICON
 end
 
@@ -30,7 +37,18 @@ function Slices.Label(s)
 	if s.label then return s.label end
 	if s.kind == "emote" then return ns.Emotes.Label(s.value) end
 	if s.kind == "macro" then return "Macro" end
+	if ns.Actions.IsAction(s.kind) then
+		-- Item names can arrive a moment later; ITEM_DATA_LOAD_RESULT redraws.
+		return ns.Actions.Name(s.kind, s.value) or ns.Actions.KindLabel(s.kind)
+	end
 	return "Empty"
+end
+
+-- Count to show on the slice (items), or nil.
+function Slices.Count(s)
+	if s and ns.Actions.IsAction(s.kind) and ns.Actions.Valid(s.kind, s.value) then
+		return ns.Actions.Count(s.kind, s.value)
+	end
 end
 
 local function trim(s)
@@ -54,8 +72,14 @@ function Slices.Validate(kind, value)
 			return nil, ("Macro is %d characters; the limit is %d."):format(#value, Slices.MACRO_MAX)
 		end
 		return value
+	elseif ns.Actions.IsAction(kind) then
+		local id = value:match("^%d+$") and tonumber(value)
+		if not ns.Actions.Valid(kind, id) then
+			return nil, ("A %s needs a numeric ID."):format(ns.Actions.KindLabel(kind):lower())
+		end
+		return id
 	end
-	return nil, "Kind must be emote or macro."
+	return nil, "Kind must be emote, macro, item, spell or toy."
 end
 
 -- "134400" -> 134400; "Spell_Nature_Polymorph" -> "Interface\\Icons\\Spell_Nature_Polymorph";
