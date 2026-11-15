@@ -28,6 +28,7 @@ Secure\Snippets.lua
 Secure\SecureWheel.lua
 UI\Skin.lua
 Config\Widgets.lua
+Config\IconData.lua
 Config\IconPicker.lua
 Config\EmoteMenu.lua
 Config\Panel.lua

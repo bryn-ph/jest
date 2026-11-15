@@ -43,6 +43,7 @@ CI runs both on every push and pull request, and builds the release zip without 
 ## Generated files
 
 - `Jest/Core/EmoteData.lua`: emote animation and voice data from WoW: Forever's game tables (via wago.tools). Regenerate after a patch with `tools\gen_emote_data.py`, or pin a build with `--build <version>`.
+- `Jest/Config/IconData.lua`: the name of every icon (about 30,000, as one string), so the icon picker can search them. From the game's ManifestInterfaceData table via `tools\gen_icon_data.py`; regenerate after a patch that adds icons.
 - `Jest/Media/icon.tga` and `assets/logo.png`: the addon icon, from `tools\gen_icon.py` (source art in `assets/`, CC BY 3.0, see README).
 - `Jest/Media/wedge_*.tga`: wheel segment art from `tools\gen_wedges.py`. Add `--preview preview.png` to render a sample wheel. Its geometry constants must match those at the top of `Jest/UI/WheelView.lua`.
 

@@ -15,6 +15,7 @@ Use it as a quick-access menu for the things you don't want on your action bars,
 - Emotes are tagged **Anim** and/or **Voice** for your character, with filters to find them.
 - Number keys fire slices while the wheel is open; a second key repeats the last one.
 - Editor window with a live preview: drag slices to rearrange, pick icons and labels, set key bindings. It stays open alongside your bags.
+- Icon picker with search: type "dance" or "beer" to find an icon by name, filtered to Abilities, Achievements, Items or All.
 - Settings are saved account-wide.
 
 

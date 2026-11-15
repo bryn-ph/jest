@@ -141,6 +141,11 @@ function DB.Init()
 		JestDB.profiles[name] = type(name) == "string" and cleanProfile(profile) or nil
 	end
 
+	-- The wheel this character last had showing, for "Reopen on last wheel used" after a reload.
+	local last = JestCharDB.lastWheel
+	if not (type(last) == "number" and last == math.floor(last) and last >= 1 and last <= ns.MAX_WHEELS) then
+		JestCharDB.lastWheel = nil
+	end
 	if type(JestCharDB.profile) ~= "string" then
 		JestCharDB.profile = "Default"
 	end

@@ -288,6 +288,7 @@ end
 -- p: the wheel it was on.
 function Skin.Close(idx, reason, p)
 	if p and p ~= page then showWheel(p) end
+	if p and JestCharDB then JestCharDB.lastWheel = p end -- survives a reload
 	if ns.debug and (reason == "mouse" or reason == "deadzone") then
 		local x, y = cursorUI()
 		local skinIdx = ns.Geometry.SliceAt(x - openX, y - openY, view.n, deadZoneUI)

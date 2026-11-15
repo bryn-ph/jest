@@ -82,6 +82,9 @@ C_EquipmentSet = {
   GetEquipmentSetInfo = function(id) if id == 3 then return 'Tank', 132341 end end,
 }
 GetMacroInfo = function(i) if i == 121 then return 'Party', 136243, '/cheer\n/dance\n' end end
+-- the icon picker's source: real file IDs from Config/IconData.lua, plus one with no known name
+GetMacroIcons = function(t) for _, id in ipairs({ 132089, 236279, 236688, 236555 }) do t[#t + 1] = id end end
+GetMacroItemIcons = function(t) for _, id in ipairs({ 133886, 134062, 99999999 }) do t[#t + 1] = id end end
 PlaySound = function() end
 SOUNDKIT = { U_CHAT_SCROLL_BUTTON = 1, IG_MAINMENU_OPTION_CHECKBOX_ON = 2, IG_MAINMENU_OPTION_CHECKBOX_OFF = 3 }
 ClearOverrideBindings = function() end
@@ -306,6 +309,45 @@ ns.IconPicker.Close()
 check(not picker.__shown, 'picker closes')
 ui.iconButton:Click()
 -- simulate manual entry path via ParseIcon + callback using Use button: find by scanning not possible; call Open with callback directly
+ns.IconPicker.Open(nil, nil, function(icon) ns.DB.Wheel().slices[2].icon = icon end)
+check(picker.__shown, 'picker reopen')
+
+-- icon search and categories
+local P = ns.IconPicker
+local function viewHas(id) for _, v in ipairs(P._view()) do if v == id then return true end end return false end
+check(P._categoryOf('INV_Misc_Fork&Knife') == 'items' and P._categoryOf('Achievement_Reputation_08') == 'achievements'
+	and P._categoryOf('Ability_Ambush') == 'abilities' and P._categoryOf(nil) == nil, 'icon categories from names')
+check(viewHas(132089) and not viewHas(133886) and not viewHas(236688), 'opens on Abilities: no items or achievements')
+check(P._scrollBar().__shown == false, 'scroll bar hidden when every icon fits')
+P._search('dance')
+check(P._view()[1] == 236279 and #P._view() == 1, 'search finds ShadowDance in Abilities')
+check(JestIconPicker.__shown, 'still open while searching')
+P._setFilter('all')
+check(P._view()[1] == 236279 and P._view()[2] == 133886, 'word-start match (ShadowDance) ranks above FireDancer')
+P._setFilter('items')
+P._search('cairne')
+check(#P._view() == 0, 'no match in Items')
+P._setFilter('achievements')
+check(P._view()[1] == 236555, 'names with spaces are searchable')
+P._search('  fork&knife ')
+P._setFilter('all')
+check(P._view()[1] == 134062, 'exact name ranks first, punctuation searchable')
+check(not viewHas(99999999), 'unnamed icons drop out of searches')
+P._search('')
+check(viewHas(99999999), '...but show under All')
+P._search('cairne bloodhoof')
+P._enter()
+check(ns.DB.Wheel().slices[2].icon == 236555 and not JestIconPicker.__shown, 'Enter picks the first match')
+ns.IconPicker.Open(nil, 236555, function(icon) ns.DB.Wheel().slices[2].icon = icon end)
+check(viewHas(236555) and not viewHas(132089), 'opens on the current icon\'s category')
+P._search('132089')
+check(P._view()[1] == 132089, 'a file ID finds that icon in any category')
+P._enter()
+check(ns.DB.Wheel().slices[2].icon == 132089, 'Enter on a file ID uses it')
+ns.IconPicker.Open(nil, nil, function(icon) ns.DB.Wheel().slices[2].icon = icon end)
+P._search('Interface\\Icons\\Spell_Nature_Polymorph')
+P._enter()
+check(ns.DB.Wheel().slices[2].icon == 'Interface\\Icons\\Spell_Nature_Polymorph', 'Enter on a texture path uses it')
 ns.IconPicker.Open(nil, nil, function(icon) ns.DB.Wheel().slices[2].icon = icon end)
 check(picker.__shown, 'picker reopen')
 
@@ -812,6 +854,22 @@ check(click('pick3', false) == 'w2s3', 'number keys pick from the wheel showing'
 scroll('next', false); scroll('next', true)
 check(btn.__attrs.page == 2, 'scrolling does nothing while closed')
 ns.DB.Profile().rememberWheel = false; ns.Changed()
+
+-- "Reopen on last wheel" checkbox in the editor, and the last wheel surviving a reload
+check(ui.remember.__shown and ui.rememberLabel.__shown, 'remember checkbox shows with two wheels')
+ui.remember.GetChecked = function() return true end
+ui.remember:Click()
+check(ns.DB.Profile().rememberWheel == true and btn.__attrs.remember == true, 'checkbox turns remembering on')
+ui.remember.GetChecked = function() return false end
+ui.remember:Click()
+check(ns.DB.Profile().rememberWheel == false and btn.__attrs.remember == false, 'and off again')
+ns.Skin.Close(nil, 'cancel', 2)
+check(JestCharDB.lastWheel == 2, 'closing saves the wheel showing')
+btn.__attrs.page = nil -- as after a /reload
+ns.Changed()
+check(btn.__attrs.page == 2, 'the first apply after a reload starts on the saved wheel')
+JestCharDB.lastWheel = 7; ns.DB.Init()
+check(JestCharDB.lastWheel == nil, 'a bad saved wheel number is dropped')
 
 -- right-click menu: delete, then undo
 ui.tabs[2]:Click('RightButton')
