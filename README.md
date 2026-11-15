@@ -14,13 +14,13 @@ Use it as a quick-access menu for the things you don't want on your action bars,
 - Optional extra wheels (up to 5): scroll the mouse wheel while it's open to flip between them, e.g. consumables on one, mounts on another, emotes on a third.
 - Emotes are tagged **Anim** and/or **Voice** for your character, with filters to find them.
 - Number keys fire slices while the wheel is open; a second key repeats the last one.
-- Options panel with a live preview: drag slices to rearrange, pick icons and labels, set key bindings.
+- Editor window with a live preview: drag slices to rearrange, pick icons and labels, set key bindings. It stays open alongside your bags.
 - Settings are saved account-wide.
 
 
 ## Usage
 
-1. Open the options with `/jest` (or *Options → AddOns → Jest*) and set the **Open wheel** key.
+1. Type `/jest` to open Jest's window (also under *Options → AddOns → Jest*) and set the **Open wheel** key.
 2. Hold the key, move the mouse toward a slice, and release.
 
 | While the wheel is open | |

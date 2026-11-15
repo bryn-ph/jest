@@ -46,12 +46,41 @@ end
 local BIND_WHEEL = "CLICK JestWheelButton:LeftButton"
 local BIND_REPEAT = "CLICK JestWheelButton:repeat"
 
-local canvas = CreateFrame("Frame")
-canvas:Hide()
-local category
+-- The editor has its own window rather than living in the Settings panel. While Settings is
+-- open the game refuses to open its bags (and you drag things from your bags onto the wheel),
+-- and closing Settings always brings up the Game Menu. Options > AddOns > Jest only has a
+-- button that opens this window; the Appearance sliders stay in Settings.
+local WINDOW_W, WINDOW_H = 690, 630
+local window = CreateFrame("Frame", "JestEditor", UIParent, "BackdropTemplate")
+window:SetSize(WINDOW_W, WINDOW_H)
+window:SetPoint("CENTER", -150, 30) -- left of centre, leaving room for bags on the right
+window:SetFrameStrata("HIGH")
+window:SetToplevel(true)
+window:SetClampedToScreen(true)
+window:EnableMouse(true)
+window:SetMovable(true)
+window:RegisterForDrag("LeftButton")
+window:SetScript("OnDragStart", window.StartMoving)
+window:SetScript("OnDragStop", window.StopMovingOrSizing)
+window:SetBackdrop({
+	bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+	edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+	tile = true, tileSize = 32, edgeSize = 32,
+	insets = { left = 11, right = 12, top = 12, bottom = 11 },
+})
+window:Hide()
+table.insert(UISpecialFrames, "JestEditor") -- Esc closes it
+local closeButton = CreateFrame("Button", nil, window, "UIPanelCloseButton")
+closeButton:SetPoint("TOPRIGHT", -6, -6)
+
+local canvas = CreateFrame("Frame", nil, window)
+canvas:SetPoint("TOPLEFT", 12, -12)
+canvas:SetPoint("BOTTOMRIGHT", -12, 12)
+local category, appearanceCategory
 local built = false
 local ui = {}
 Panel._ui = ui -- internal; used by the tests
+Panel._canvas, Panel._window = canvas, window
 local selected = 1
 -- Unsaved edits for the selected slice: one draft value per kind, so switching between Emote
 -- and Macro never loses what was typed. "Unsaved" is worked out by comparing with draft.slice.
@@ -918,6 +947,11 @@ local function buildHeader()
 	local sub = label(canvas, "Hold your wheel key, aim at a slice and release. Release in the centre or press Esc to cancel. Type /jest help for chat commands.", "GameFontHighlightSmall")
 	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 	sub:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
+
+	ui.appearance = button(canvas, "Appearance...", 110)
+	ui.appearance:SetPoint("TOPRIGHT", canvas, "TOPRIGHT", -30, -8) -- clear of the close button
+	ui.appearance:SetScript("OnClick", function() Panel.OpenAppearance() end)
+	tooltip(ui.appearance, "Appearance", "Ring radius, cancel zone, scale, sounds and which wheel opens first. Opens in the game's Settings.")
 end
 
 local function buildBindings()
@@ -1351,10 +1385,6 @@ canvas:SetScript("OnHide", function()
 	if ui.renameBox then ui.renameBox:ClearFocus() end
 end)
 
--- Called by the Settings panel on canvas pages.
-canvas.OnCommit = function() end
-canvas.OnDefault = function() end
-canvas.OnRefresh = function() Panel.Refresh() end
 
 ns.OnChanged(function()
 	if canvas:IsShown() then Panel.Refresh() end
@@ -1409,27 +1439,76 @@ local function registerAppearance(parent)
 			ns.Changed()
 		end)
 	Settings.CreateCheckbox(sub, remember, "With more than one wheel: open on the wheel you used last. Off, it always opens on the first wheel, so directions stay the same every time.")
+	return sub
+end
+
+-- Options > AddOns > Jest: a pointer to the editor window.
+local launcher = CreateFrame("Frame")
+launcher:Hide()
+launcher.OnCommit = function() end
+launcher.OnDefault = function() end
+launcher.OnRefresh = function() end
+launcher:SetScript("OnShow", function(self)
+	if self.built then return end
+	self.built = true
+	local title = label(self, "Jest", "GameFontHighlightHuge")
+	title:SetPoint("TOPLEFT", LEFT, -16)
+	local text = label(self, "Jest's wheels are edited in their own window, so you can drag things from your bags and spellbook onto them. Type /jest to open it any time.", "GameFontHighlight")
+	text:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
+	text:SetPoint("RIGHT", self, "RIGHT", -LEFT, 0)
+	local open = button(self, "Open Jest", 140)
+	self.openButton = open
+	open:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -16)
+	open:SetScript("OnClick", function()
+		-- Settings has to close: the game won't open bags while it's up.
+		if SettingsPanel and HideUIPanel then HideUIPanel(SettingsPanel) end
+		Panel.Open()
+	end)
+	local more = label(self, "Ring size, cancel zone, scale and sounds are under Appearance, below Jest in this list.", "GameFontDisableSmall")
+	more:SetPoint("TOPLEFT", open, "BOTTOMLEFT", 0, -16)
+	more:SetPoint("RIGHT", self, "RIGHT", -LEFT, 0)
+end)
+
+local function categoryID(cat)
+	return cat and (cat.GetID and cat:GetID() or cat.ID)
 end
 
 function Panel.Register()
 	if category then return end
 	if not (Settings and Settings.RegisterCanvasLayoutCategory) then
-		ns.Debug("Settings API unavailable; use /jest help")
+		ns.Debug("Settings API unavailable; Appearance is only available through /jest commands")
 		return
 	end
-	category = Settings.RegisterCanvasLayoutCategory(canvas, "Jest")
-	local ok, err = pcall(registerAppearance, category)
-	if not ok then
-		ns.Debug("Appearance page failed:", err)
+	category = Settings.RegisterCanvasLayoutCategory(launcher, "Jest")
+	local ok, sub = pcall(registerAppearance, category)
+	if ok then
+		appearanceCategory = sub
+	else
+		ns.Debug("Appearance page failed:", sub)
 	end
 	Settings.RegisterAddOnCategory(category)
 end
 
 function Panel.Open()
-	if not category then
-		ns.Print("The options panel is unavailable; use /jest help.")
+	window:Show()
+	window:Raise()
+end
+
+-- /jest and the addon compartment: open, or close if already open.
+function Panel.Toggle()
+	if window:IsShown() then
+		window:Hide()
+	else
+		Panel.Open()
+	end
+end
+
+function Panel.OpenAppearance()
+	local id = categoryID(appearanceCategory) or categoryID(category)
+	if not id then
+		ns.Print("The Settings panel is unavailable; use /jest radius, deadzone, scale and sound.")
 		return
 	end
-	local id = category.GetID and category:GetID() or category.ID
+	window:Hide()
 	Settings.OpenToCategory(id)
 end

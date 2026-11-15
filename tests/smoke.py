@@ -99,7 +99,7 @@ __settings = {}
 Settings = {
   VarType = { Number = 'number', Boolean = 'boolean' },
   RegisterCanvasLayoutCategory = function(frame, name) __canvas = frame; return { GetID = function() return 42 end } end,
-  RegisterVerticalLayoutSubcategory = function(parent, name) return { name = name } end,
+  RegisterVerticalLayoutSubcategory = function(parent, name) return { name = name, GetID = function() return 43 end } end,
   RegisterAddOnCategory = function() end,
   RegisterProxySetting = function(cat, var, t, name, def, get, set) local s = { var = var, get = get, set = set }; __settings[var] = s; return s end,
   CreateSliderOptions = function() return newObj() end,
@@ -235,9 +235,21 @@ check(#ns.DB.Wheel().slices == 8, 'reset restored 8 slices')
 
 -- ===== Options panel =====
 SlashCmdList.JEST('')
-check(__opened == 42, '/jest opens settings category')
-__canvas:Show(); __canvas.__scripts.OnShow(__canvas)
+check(JestEditor.__shown and __opened == nil, '/jest opens the editor window, not Settings')
+SlashCmdList.JEST('')
+check(not JestEditor.__shown, '/jest again closes it')
+SlashCmdList.JEST('')
+ns.Panel._canvas.__scripts.OnShow(ns.Panel._canvas)
 local ui = ns.Panel._ui
+-- Options > AddOns > Jest is a launcher: its button closes Settings and opens the editor
+JestEditor:Hide()
+SettingsPanel = newObj('SettingsPanel'); HideUIPanel = function(f) f:Hide() end
+__canvas:Show(); __canvas.__scripts.OnShow(__canvas)
+__canvas.openButton:Click()
+check(JestEditor.__shown and not SettingsPanel.__shown, 'launcher closes Settings and opens the editor')
+ui.appearance:Click()
+check(__opened == 43 and not JestEditor.__shown, 'Appearance... opens the Settings subcategory')
+JestEditor:Show()
 check(ui.editorTitle:GetText() == 'Slice 1', 'editor shows slice 1')
 check(ui.emoteDropdown.__shown and not ui.multi.__shown, 'emote slices use the dropdown')
 check(ui.kind.text == nil and ui.kind.emote and ui.kind.macro, 'only Emote and Macro types')
@@ -537,7 +549,7 @@ check(cropped > 0, 'icons cropped with SetTexCoord')
 -- hide settles drafts
 ui.kind.macro:Click()
 ui.multiBox:SetText('/e cheers wildly.'); ui.multiBox.__scripts.OnTextChanged(ui.multiBox, true)
-__canvas.__scripts.OnHide(__canvas)
+ns.Panel._canvas.__scripts.OnHide(ns.Panel._canvas)
 check(ns.DB.Wheel().slices[6].kind == 'macro' and ns.DB.Wheel().slices[6].value == '/e cheers wildly.', 'hide auto-saves valid draft')
 
 -- ===== migration: v1 "text" slices become "/e" macros that look the same =====
@@ -626,7 +638,7 @@ local empty, emptyWhy = A.FromCursor()
 check(empty == nil and emptyWhy == nil, 'cursor: empty is silent')
 
 -- dropping in the options panel
-__canvas:Show(); __canvas.__scripts.OnShow(__canvas)
+ns.Panel._canvas:Show(); ns.Panel._canvas.__scripts.OnShow(ns.Panel._canvas)
 local pv = ui.preview
 local list = function() return ns.DB.Wheel().slices end
 local before2 = list()[2]

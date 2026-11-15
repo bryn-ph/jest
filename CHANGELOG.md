@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The editor now opens in its own movable window (`/jest`, or *Options → AddOns → Jest → Open Jest*) instead of inside the game's Settings. The game's own bags can be opened alongside it to drag things onto the wheel; before, they wouldn't open while Settings was up. Closing it no longer brings up the Game Menu.
+- Appearance settings stay in *Options → AddOns → Jest → Appearance*, also reachable from the editor's **Appearance...** button.
+
 ## v0.3.0-beta
 
 - **Multiple wheels**, optional: add up to 5 with the **+** tab in the options, then scroll the mouse wheel while the wheel is open to switch between them (works in combat). The wheel's name and a dot per wheel show above it.
