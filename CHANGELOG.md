@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.0-beta
 
 - **Multiple wheels**, optional: add up to 5 with the **+** tab in the options, then scroll the mouse wheel while the wheel is open to switch between them (works in combat). The wheel's name and a dot per wheel show above it.
 - Wheel tabs: click to edit, double-click to rename, right-click to rename, move or delete (with Undo).

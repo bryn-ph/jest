@@ -4,7 +4,7 @@ A radial wheel for **WoW: Forever**. Put anything on it: potions and food, spell
 
 Use it as a quick-access menu for the things you don't want on your action bars, as an emote wheel for roleplay, or both, with a wheel for each.
 
-> **Alpha.** Please [report issues here](https://github.com/bryn-ph/jest/issues).
+> **Beta.** Please [report issues here](https://github.com/bryn-ph/jest/issues).
 
 ## Features
 
