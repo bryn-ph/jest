@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The icon picker has a search box: type part of a name ("dance", "heart", "beer") and the grid narrows as you type. Words can be combined, and a file ID or texture path still works.
+- Category chips (Abilities, Achievements, Items, All) cut the list down; it opens on Abilities, or on the current icon's category. Hover an icon to see its name.
+- The icon picker has a scroll bar.
+- **Reopen on last wheel** now has a checkbox next to the wheel tabs, and the wheel you were on is remembered after a reload or relog.
+
 ## v0.3.1-beta
 
 - The editor now opens in its own movable window (`/jest`, or *Options → AddOns → Jest → Open Jest*) instead of inside the game's Settings. The game's own bags can be opened alongside it to drag things onto the wheel; before, they wouldn't open while Settings was up. Closing it no longer brings up the Game Menu.

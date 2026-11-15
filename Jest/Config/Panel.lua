@@ -875,6 +875,19 @@ local function layoutTabs()
 	ui.tabHint:SetText(#wheels > 1
 		and "Scroll the mouse wheel while it's open to switch."
 		or "Add a wheel with +, then scroll while it's open to switch.")
+
+	-- "Reopen on last wheel" only means something with more than one wheel.
+	local several = #wheels > 1
+	ui.remember:SetShown(several)
+	ui.rememberLabel:SetShown(several)
+	ui.remember:SetChecked(ns.DB.Profile().rememberWheel)
+	ui.tabHint:ClearAllPoints()
+	ui.tabHint:SetPoint("LEFT", ui.newWheel, "RIGHT", 10, 0)
+	if several then
+		ui.tabHint:SetPoint("RIGHT", ui.remember, "LEFT", -10, 0)
+	else
+		ui.tabHint:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
+	end
 end
 
 -- Inline rename: an edit box laid over the tab. Enter or clicking away saves; Esc cancels.
@@ -913,9 +926,20 @@ local function buildTabs()
 	tooltip(ui.newWheel, "New wheel", ("Adds another wheel (up to %d). In game, scroll the mouse wheel while the wheel is open to move between them."):format(ns.MAX_WHEELS))
 
 	ui.tabHint = label(canvas, "", "GameFontDisableSmall")
-	ui.tabHint:SetPoint("LEFT", ui.newWheel, "RIGHT", 10, 0)
-	ui.tabHint:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
-	ui.tabHint:SetWordWrap(false)
+	ui.tabHint:SetWordWrap(false) -- anchored in layoutTabs
+
+	-- Same setting as Appearance > Reopen on last wheel used, kept next to the wheels it's about.
+	ui.rememberLabel = label(canvas, "Reopen on last wheel", "GameFontHighlightSmall")
+	ui.rememberLabel:SetPoint("RIGHT", canvas, "TOPRIGHT", -LEFT, TABS_Y - TAB_H / 2)
+	ui.remember = CreateFrame("CheckButton", nil, canvas, "UICheckButtonTemplate")
+	ui.remember:SetSize(22, 22)
+	ui.remember:SetPoint("RIGHT", ui.rememberLabel, "LEFT", -2, 0)
+	ui.remember:SetScript("OnClick", function(self)
+		ns.DB.Profile().rememberWheel = self:GetChecked() and true or false
+		ns.Changed()
+	end)
+	tooltip(ui.remember, "Reopen on last wheel",
+		"On: the wheel opens on whichever wheel you used last, even after a reload. Off: it always opens on the first wheel, so every direction stays the same.")
 
 	local box = ns.Widgets.Input(canvas, TAB_MIN_W, ns.WHEEL_NAME_MAX)
 	box:SetFrameLevel((canvas:GetFrameLevel() or 0) + 10) -- above the tabs

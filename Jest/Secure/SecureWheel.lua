@@ -134,6 +134,11 @@ function SW.Apply()
 	btn:SetAttribute("remember", profile.rememberWheel and true or false)
 	-- The snippet measures in UIParent units, but the wheel is drawn scaled.
 	btn:SetAttribute("deadzone", profile.deadZone * profile.scale)
+	-- First apply after loading: start on the wheel this character had last (only used when
+	-- "Reopen on last wheel used" is on; the snippet opens on wheel 1 otherwise).
+	if btn:GetAttribute("page") == nil and JestCharDB and JestCharDB.lastWheel then
+		btn:SetAttribute("page", JestCharDB.lastWheel)
+	end
 	if (btn:GetAttribute("page") or 1) > #wheels then
 		btn:SetAttribute("page", 1)
 	end
