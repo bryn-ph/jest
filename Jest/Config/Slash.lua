@@ -200,7 +200,7 @@ end)
 add("test", "test <n> - perform an emote slice now", function(rest)
 	local i = parseIndex(rest)
 	if i and not ns.SecureWheel.TestEmote(ns.DB.EditIndex(), i) then
-		Print("Only emote slices can be tested from chat; macros fire from the wheel.")
+		Print("Only emote slices can be tested from chat; other slices fire from the wheel.")
 	end
 end)
 

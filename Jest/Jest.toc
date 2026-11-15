@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Jest
-## Notes: Radial emote wheel. Hold a key, flick toward an emote, release.
+## Notes: Radial wheel for potions, spells, mounts, toys, macros and emotes. Hold a key, flick, release. Works in combat.
 ## Author: bryn-ph
 ## Version: @project-version@
 ## Category: Roleplay

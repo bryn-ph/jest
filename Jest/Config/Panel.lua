@@ -1217,10 +1217,10 @@ local function buildEditor()
 		if isDirty() then
 			setStatus("Save first, then test.", true)
 		elseif not ns.SecureWheel.TestEmote(ns.DB.EditIndex(), selected) then
-			setStatus("Only emote slices can be tested here; macros fire from the wheel.", true)
+			setStatus("Only emote slices can be tested here; other slices fire from the wheel.", true)
 		end
 	end)
-	tooltip(ui.test, "Test", "Performs this emote now. Macro slices can only fire from the wheel.")
+	tooltip(ui.test, "Test", "Performs this emote now. Other kinds of slice (items, spells, macros...) only fire from the wheel.")
 
 	-- Status is pinned to the card's bottom edge so messages never shift the layout.
 	ui.undo = button(card, "Undo", 60)

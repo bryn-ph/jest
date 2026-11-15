@@ -1,15 +1,17 @@
 # Jest
 
-A radial wheel for **WoW: Forever**: emotes, potions, spells and more. Hold a key, flick the mouse toward a slice, release. Works in combat.
+A radial wheel for **WoW: Forever**. Put anything on it: potions and food, spells, mounts, toys, battle pets, equipment sets, macros and emotes. Hold a key, flick the mouse toward a slice, release. Works in combat.
+
+Use it as a quick-access menu for the things you don't want on your action bars, as an emote wheel for roleplay, or both, with a wheel for each.
 
 > **Alpha.** Please [report issues here](https://github.com/bryn-ph/jest/issues).
 
 ## Features
 
 - Hold-to-open wheel with up to 12 slices; release to fire, release in the centre to cancel.
-- Optional extra wheels (up to 5): scroll the mouse wheel while it's open to flip between them, e.g. emotes on one, potions on another.
-- Slices can be any of the game's emotes, a macro (use `/e` for a custom emote line), or anything you can drag: items and consumables, spells, mounts, toys, battle pets and equipment sets.
-- Drag things straight from your bags or spellbook onto the wheel in the options. Item slices show how many you have left.
+- Slices can be anything you can drag: items and consumables, spells, mounts, toys, battle pets, macros and equipment sets. Or any of the game's emotes, or your own macro text (use `/e` for a custom emote line).
+- Drag things straight from your bags, spellbook or collections onto the wheel in the options. Item slices show how many you have left.
+- Optional extra wheels (up to 5): scroll the mouse wheel while it's open to flip between them, e.g. consumables on one, mounts on another, emotes on a third.
 - Emotes are tagged **Anim** and/or **Voice** for your character, with filters to find them.
 - Number keys fire slices while the wheel is open; a second key repeats the last one.
 - Options panel with a live preview: drag slices to rearrange, pick icons and labels, set key bindings.
