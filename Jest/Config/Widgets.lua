@@ -217,3 +217,87 @@ function Widgets.EmoteBadgeLegend()
 	end
 	return ("|cff%sAnim|r animation   |cff%sVoice|r your character speaks"):format(hex(Widgets.ANIM_COLOR), hex(Widgets.VOICE_COLOR))
 end
+
+-- Small pop-up menu under `anchor`. items = { { text =, onClick = fn, disabled = bool }, ... }.
+-- Closes on a pick, on Esc, or on a click anywhere else.
+local menu
+local MENU_ROW_H, MENU_W = 20, 140
+
+local function createMenu()
+	menu = CreateFrame("Frame", "JestContextMenu", UIParent, "BackdropTemplate")
+	menu:SetFrameStrata("FULLSCREEN_DIALOG")
+	menu:SetBackdrop({
+		bgFile = "Interface\Buttons\WHITE8x8",
+		edgeFile = "Interface\Tooltips\UI-Tooltip-Border",
+		edgeSize = 12,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+	menu:SetBackdropColor(0.05, 0.05, 0.07, 0.95)
+	menu:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+	menu:EnableMouse(true)
+	menu:Hide()
+	menu.rows = {}
+	table.insert(UISpecialFrames, "JestContextMenu") -- Esc closes it
+	menu:SetScript("OnEvent", function(self)
+		if not self:IsMouseOver() then self:Hide() end
+	end)
+	menu:SetScript("OnShow", function(self)
+		pcall(self.RegisterEvent, self, "GLOBAL_MOUSE_DOWN")
+	end)
+	menu:SetScript("OnHide", function(self)
+		pcall(self.UnregisterEvent, self, "GLOBAL_MOUSE_DOWN")
+	end)
+end
+
+local function menuRow(i)
+	local row = menu.rows[i]
+	if row then return row end
+	row = CreateFrame("Button", nil, menu)
+	row:SetHeight(MENU_ROW_H)
+	row:SetPoint("TOPLEFT", 5, -5 - (i - 1) * MENU_ROW_H)
+	row:SetPoint("RIGHT", -5, 0)
+	row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.text:SetPoint("LEFT", 8, 0)
+	row.text:SetJustifyH("LEFT")
+	local hover = row:CreateTexture(nil, "HIGHLIGHT")
+	hover:SetAllPoints()
+	hover:SetColorTexture(1, 0.82, 0, 0.18)
+	row:SetScript("OnClick", function(self)
+		menu:Hide()
+		if self.onClick then self.onClick() end
+	end)
+	menu.rows[i] = row
+	return row
+end
+
+function Widgets.ShowMenu(anchor, items)
+	if not menu then createMenu() end
+	for i, item in ipairs(items) do
+		local row = menuRow(i)
+		row.text:SetText(item.text)
+		row.onClick = item.onClick
+		row:SetEnabled(not item.disabled)
+		if item.disabled then
+			row.text:SetTextColor(0.45, 0.45, 0.45)
+		else
+			row.text:SetTextColor(1, 1, 1)
+		end
+		row:Show()
+	end
+	for i = #items + 1, #menu.rows do
+		menu.rows[i]:Hide()
+	end
+	menu:SetSize(MENU_W, #items * MENU_ROW_H + 10)
+	menu:ClearAllPoints()
+	menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+	menu:Show()
+	menu:Raise()
+end
+
+function Widgets.CloseMenu()
+	if menu then menu:Hide() end
+end
+
+function Widgets.MenuIsOpen()
+	return menu ~= nil and menu:IsShown()
+end

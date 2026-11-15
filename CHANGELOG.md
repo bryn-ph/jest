@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Multiple wheels**, optional: add up to 5 with the **+** tab in the options, then scroll the mouse wheel while the wheel is open to switch between them (works in combat). The wheel's name and a dot per wheel show above it.
+- Wheel tabs: click to edit, double-click to rename, right-click to rename, move or delete (with Undo).
+- New setting *Reopen on last wheel used* (off by default: the wheel always opens on the first wheel).
+- `/jest wheel` lists wheels; `/jest wheel <n>` picks the one other commands edit; `/jest wheel add|rename|remove`.
+
 ## v0.2.0-alpha
 
 - Slices can now hold anything you can drag: items and consumables, spells, mounts, toys, battle pets, macros and equipment sets. They fire in combat wherever the game allows.

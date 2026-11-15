@@ -18,6 +18,12 @@ local STATUS_SECONDS = 4 -- success messages clear themselves after this long
 local UNDO_SECONDS = 10
 local CURSOR_POLL = 0.1  -- how often the preview checks whether you're holding something droppable
 
+-- Wheel tabs
+local TABS_Y = -168
+local TAB_H, TAB_PAD, TAB_GAP = 22, 12, 3
+local TAB_MIN_W, TAB_MAX_W = 48, 130
+local BOX_BACKDROP = { bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 }
+
 -- Editor tabs. "action" covers every draggable kind in Core/Actions.lua (item, spell, mount...).
 local KINDS = { "emote", "macro", "action" }
 local KIND_LABEL = { emote = "Emote", macro = "Macro", action = "Action" }
@@ -469,15 +475,28 @@ end
 ---------------------------------------------------------------------------
 -- Dropping things from the game onto the wheel
 ---------------------------------------------------------------------------
-local undo -- { index =, previous = slice or nil, dropped = slice } for the last drop
+-- Reverts the last drop or wheel deletion; returns false when that's no longer possible.
+local undoAction
 
-local function showUndo()
+-- Show the Undo button next to the current status message. Call after setStatus, which hides it.
+local function offerUndo(fn)
+	undoAction = fn
 	ui.undo:Show()
 	local token = statusToken
 	if C_Timer and C_Timer.After then
 		C_Timer.After(UNDO_SECONDS, function()
 			if token == statusToken then ui.undo:Hide() end
 		end)
+	end
+end
+
+local function runUndo()
+	local fn = undoAction
+	undoAction = nil
+	if fn and fn() ~= false then
+		setStatus("Undone.")
+	else
+		setStatus("Nothing to undo.", true)
 	end
 end
 
@@ -508,32 +527,27 @@ local function dropFromCursor(index)
 		table.insert(list, dropped)
 		index = #list
 	end
-	undo = { index = index, previous = previous, dropped = dropped }
 	selected = index
 	loadDraft()
 	ns.Changed()
 	setStatus(("Slice %d is now %s."):format(index, ns.Slices.Label(dropped)))
-	showUndo()
-	return true
-end
 
-local function undoDrop()
-	local list = slices()
-	if not undo or list[undo.index] ~= undo.dropped then
-		setStatus("Nothing to undo.", true)
-		return
-	end
-	if undo.previous then
-		list[undo.index] = undo.previous
-		selected = undo.index
-	else
-		table.remove(list, undo.index)
-		selected = math.min(selected, #list)
-	end
-	undo = nil
-	loadDraft()
-	ns.Changed()
-	setStatus("Undone.")
+	local wheel = ns.DB.Wheel()
+	offerUndo(function()
+		local w = ns.DB.IndexOfWheel(wheel)
+		if not w or wheel.slices[index] ~= dropped then return false end
+		settleDraft()
+		if previous then
+			wheel.slices[index] = previous
+		else
+			table.remove(wheel.slices, index)
+		end
+		ns.DB.SetEditIndex(w)
+		selected = math.max(1, math.min(index, #wheel.slices))
+		loadDraft()
+		ns.Changed()
+	end)
+	return true
 end
 
 ---------------------------------------------------------------------------
@@ -668,6 +682,232 @@ local function endDrag(cancel)
 end
 
 ---------------------------------------------------------------------------
+-- Wheel tabs: one per wheel, plus "+" to add one. Click to edit a wheel; double-click to rename;
+-- right-click to rename, move or delete.
+---------------------------------------------------------------------------
+local startRename -- forward declaration (tabs and the rename box refer to each other)
+
+local function selectWheel(i)
+	if i == ns.DB.EditIndex() then return end
+	endDrag(true)
+	settleDraft()
+	ns.DB.SetEditIndex(i)
+	selected = 1
+	loadDraft()
+	Panel.Refresh()
+end
+
+local function addWheel()
+	settleDraft()
+	local index, err = ns.DB.AddWheel()
+	if not index then
+		setStatus(err, true)
+		return
+	end
+	ns.DB.SetEditIndex(index)
+	selected = 1
+	loadDraft()
+	ns.Changed()
+	setStatus("Wheel added. Drop things onto its slices, and scroll to it while the wheel is open.")
+	startRename(index) -- name it straight away, like a new folder
+end
+
+local function moveWheel(from, to)
+	settleDraft()
+	if ns.DB.MoveWheel(from, to) then
+		ns.Changed()
+	end
+end
+
+local function deleteWheel(i)
+	settleDraft()
+	local removed, err = ns.DB.RemoveWheel(i)
+	if not removed then
+		setStatus(err, true)
+		return
+	end
+	selected = 1
+	loadDraft()
+	ns.Changed()
+	setStatus(("Deleted \"%s\"."):format(removed.name))
+	offerUndo(function()
+		local index = ns.DB.InsertWheel(i, removed)
+		if not index then return false end
+		ns.DB.SetEditIndex(index)
+		selected = 1
+		loadDraft()
+		ns.Changed()
+	end)
+end
+
+local function renameWheel(i, text)
+	local wheel = ns.DB.Wheels()[i]
+	local name = ns.DB.CleanWheelName(text)
+	if wheel and name and name ~= wheel.name then
+		wheel.name = name
+		ns.Changed()
+		setStatus(savedMessage())
+	end
+end
+
+local function styleTab(tab, active)
+	if active then
+		tab:SetBackdropColor(1, 0.82, 0, 0.2)
+		tab:SetBackdropBorderColor(1, 0.82, 0, 0.9)
+		tab.text:SetTextColor(1, 1, 1)
+	else
+		tab:SetBackdropColor(0, 0, 0, 0.45)
+		tab:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+		tab.text:SetTextColor(0.7, 0.7, 0.7)
+	end
+end
+
+local function createTab()
+	local tab = CreateFrame("Button", nil, canvas, "BackdropTemplate")
+	tab:SetHeight(TAB_H)
+	tab:SetBackdrop(BOX_BACKDROP)
+	tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	tab.text:SetPoint("LEFT", TAB_PAD, 0)
+	tab.text:SetPoint("RIGHT", -TAB_PAD, 0)
+	tab.text:SetWordWrap(false)
+	local hover = tab:CreateTexture(nil, "HIGHLIGHT")
+	hover:SetPoint("TOPLEFT", 1, -1)
+	hover:SetPoint("BOTTOMRIGHT", -1, 1)
+	hover:SetColorTexture(1, 1, 1, 0.08)
+	return tab
+end
+
+local function wheelMenu(tab)
+	local i, count = tab.index, #ns.DB.Wheels()
+	ns.Widgets.ShowMenu(tab, {
+		{ text = "Rename", onClick = function() startRename(i) end },
+		{ text = "Move left", disabled = i <= 1, onClick = function() moveWheel(i, i - 1) end },
+		{ text = "Move right", disabled = i >= count, onClick = function() moveWheel(i, i + 1) end },
+		{ text = "Delete", disabled = count <= 1, onClick = function() deleteWheel(i) end },
+	})
+end
+
+local function wheelTab(i)
+	local tab = ui.tabs[i]
+	if tab then return tab end
+	tab = createTab()
+	tab.index = i
+	tab:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	tab:SetScript("OnClick", function(self, mouseButton)
+		if mouseButton == "RightButton" then
+			selectWheel(self.index)
+			wheelMenu(self)
+		else
+			selectWheel(self.index)
+		end
+	end)
+	tab:SetScript("OnDoubleClick", function(self) startRename(self.index) end)
+	tab:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText(self.text:GetText(), 1, 1, 1)
+		GameTooltip:AddLine("Double-click to rename. Right-click to rename, move or delete.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("In game, scroll the mouse wheel while the wheel is open to switch wheels.", 0.5, 0.5, 0.5, true)
+		GameTooltip:Show()
+	end)
+	tab:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	ui.tabs[i] = tab
+	return tab
+end
+
+local function layoutTabs()
+	local wheels = ns.DB.Wheels()
+	local editing = ns.DB.EditIndex()
+	local x = LEFT
+	local box = ui.renameBox
+	for i, wheel in ipairs(wheels) do
+		local tab = wheelTab(i)
+		-- While renaming, size the tab to the name being typed: the box sits exactly over it,
+		-- and the tabs after it move along as the name grows.
+		local renaming = box:IsShown() and box.index == i
+		tab.text:SetText(renaming and box:GetText() or wheel.name)
+		-- The box is see-through; hide the tab's own label under it (still used for sizing).
+		tab.text:SetAlpha(renaming and 0 or 1)
+		local text = tab.text
+		local textWidth = (text.GetUnboundedStringWidth and text:GetUnboundedStringWidth()) or text:GetStringWidth() or 0
+		local width = math.max(TAB_MIN_W, math.min(TAB_MAX_W, textWidth + 2 * TAB_PAD))
+		tab:SetWidth(width)
+		tab:ClearAllPoints()
+		tab:SetPoint("TOPLEFT", canvas, "TOPLEFT", x, TABS_Y)
+		styleTab(tab, i == editing)
+		tab:Show()
+		x = x + width + TAB_GAP
+	end
+	for i = #wheels + 1, #ui.tabs do
+		ui.tabs[i]:Hide()
+	end
+	ui.newWheel:ClearAllPoints()
+	ui.newWheel:SetPoint("TOPLEFT", canvas, "TOPLEFT", x, TABS_Y)
+	ui.newWheel:SetShown(#wheels < ns.MAX_WHEELS)
+	ui.tabHint:SetText(#wheels > 1
+		and "Scroll the mouse wheel while it's open to switch."
+		or "Add a wheel with +, then scroll while it's open to switch.")
+end
+
+-- Inline rename: an edit box laid over the tab. Enter or clicking away saves; Esc cancels.
+startRename = function(i)
+	Panel.Refresh() -- make sure the tab exists and is laid out
+	local tab = ui.tabs[i]
+	local wheel = ns.DB.Wheels()[i]
+	if not (tab and wheel) then return end
+	local box = ui.renameBox
+	box.index, box.cancelled = i, false
+	box:ClearAllPoints()
+	box:SetAllPoints(tab)
+	box:SetText(wheel.name)
+	box:Show()
+	box:SetFocus()
+end
+
+local function buildTabs()
+	ui.tabs = {}
+
+	local line = canvas:CreateTexture(nil, "ARTWORK")
+	line:SetColorTexture(1, 1, 1, 0.12)
+	line:SetHeight(1)
+	line:SetPoint("TOPLEFT", canvas, "TOPLEFT", LEFT, TABS_Y - TAB_H)
+	line:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
+
+	ui.newWheel = createTab()
+	ui.newWheel:SetWidth(TAB_H + 6)
+	-- No side padding here: the tab is too narrow for it, and the "+" would be cut to "...".
+	ui.newWheel.text:ClearAllPoints()
+	ui.newWheel.text:SetPoint("CENTER", 0, 1)
+	ui.newWheel.text:SetFontObject(GameFontHighlightLarge)
+	ui.newWheel.text:SetText("+")
+	styleTab(ui.newWheel, false)
+	ui.newWheel:SetScript("OnClick", addWheel)
+	tooltip(ui.newWheel, "New wheel", ("Adds another wheel (up to %d). In game, scroll the mouse wheel while the wheel is open to move between them."):format(ns.MAX_WHEELS))
+
+	ui.tabHint = label(canvas, "", "GameFontDisableSmall")
+	ui.tabHint:SetPoint("LEFT", ui.newWheel, "RIGHT", 10, 0)
+	ui.tabHint:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
+	ui.tabHint:SetWordWrap(false)
+
+	local box = ns.Widgets.Input(canvas, TAB_MIN_W, ns.WHEEL_NAME_MAX)
+	box:SetFrameLevel((canvas:GetFrameLevel() or 0) + 10) -- above the tabs
+	box:Hide()
+	box:SetScript("OnTextChanged", function(self)
+		if self:IsShown() then layoutTabs() end
+	end)
+	box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+	box:SetScript("OnEscapePressed", function(self)
+		self.cancelled = true
+		self:ClearFocus()
+	end)
+	box:HookScript("OnEditFocusLost", function(self)
+		self:Hide()
+		if not self.cancelled then renameWheel(self.index, self:GetText()) end
+		layoutTabs() -- back to the saved name's width (also after Esc)
+	end)
+	ui.renameBox = box
+end
+
+---------------------------------------------------------------------------
 -- Build
 ---------------------------------------------------------------------------
 local function buildHeader()
@@ -698,11 +938,8 @@ local function buildBindings()
 end
 
 local function buildPreview()
-	local header = ns.Widgets.Header(canvas, "Slices  |cff888888click to edit, drag to rearrange|r")
-	header:SetPoint("TOPLEFT", LEFT, -168)
-
 	ui.add = button(canvas, "Add slice", 90)
-	ui.add:SetPoint("TOPLEFT", LEFT, -190)
+	ui.add:SetPoint("TOPLEFT", LEFT, TABS_Y - TAB_H - 8)
 	ui.remove = button(canvas, "Remove", 80)
 	ui.remove:SetPoint("LEFT", ui.add, "RIGHT", 4, 0)
 	tooltip(ui.remove, "Remove", "Deletes the selected slice. The slices after it move up one place.")
@@ -767,7 +1004,7 @@ local function buildPreview()
 	ghost:Hide()
 	ui.ghost = ghost
 
-	local hint = label(canvas, "Slice 1 is at the top; the rest follow clockwise. Drop items, spells, mounts and more from your bags or spellbook onto a slice, or into the centre to add one.", "GameFontDisableSmall")
+	local hint = label(canvas, "Click a slice to edit it, drag to rearrange. Slice 1 is at the top; the rest follow clockwise. Drop items, spells, mounts and more onto a slice, or into the centre to add one.", "GameFontDisableSmall")
 	hint:SetPoint("TOP", ui.preview.caption, "BOTTOM", 0, -6) -- below the name pill; same width as the wheel
 	hint:SetWidth(COLUMN_W)
 
@@ -979,16 +1216,16 @@ local function buildEditor()
 	ui.test:SetScript("OnClick", function()
 		if isDirty() then
 			setStatus("Save first, then test.", true)
-		elseif not ns.SecureWheel.TestEmote(selected) then
-			setStatus("Only emote slices can be tested here; macros fire from the wheel.", true)
+		elseif not ns.SecureWheel.TestEmote(ns.DB.EditIndex(), selected) then
+			setStatus("Only emote slices can be tested here; other slices fire from the wheel.", true)
 		end
 	end)
-	tooltip(ui.test, "Test", "Performs this emote now. Macro slices can only fire from the wheel.")
+	tooltip(ui.test, "Test", "Performs this emote now. Other kinds of slice (items, spells, macros...) only fire from the wheel.")
 
 	-- Status is pinned to the card's bottom edge so messages never shift the layout.
 	ui.undo = button(card, "Undo", 60)
 	ui.undo:SetPoint("BOTTOMRIGHT", -12, 8)
-	ui.undo:SetScript("OnClick", undoDrop)
+	ui.undo:SetScript("OnClick", runUndo)
 	ui.undo:Hide()
 	ui.status = label(card, "", "GameFontHighlightSmall")
 	ui.status:SetPoint("BOTTOMLEFT", 12, 10)
@@ -1009,7 +1246,7 @@ local function buildEditor()
 	ui.labelBox:SetPoint("LEFT", labelLabel, "LEFT", FIELD_X - 12, 0)
 	ui.labelBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 	ui.labelBox:HookScript("OnEditFocusLost", commitLabel)
-	tooltip(ui.labelBox, "Label", "Name shown in the middle of the wheel. Leave empty to use the default (shown in grey).")
+	tooltip(ui.labelBox, "Label", "Name shown under the wheel when this slice is highlighted. Leave empty to use the default (shown in grey).")
 
 	local iconLabel = label(card, "Icon", "GameFontHighlightSmall")
 	iconLabel:SetPoint("TOPLEFT", labelLabel, "BOTTOMLEFT", 0, -28)
@@ -1058,6 +1295,7 @@ local function build()
 	built = true
 	buildHeader()
 	buildBindings()
+	buildTabs()
 	buildPreview()
 	buildEditor()
 end
@@ -1082,6 +1320,7 @@ function Panel.Refresh()
 			showSelectedInCentre()
 		end
 	end
+	layoutTabs()
 	ui.add:SetEnabled(#list < ns.MAX_SLICES)
 	ui.remove:SetEnabled(#list > 1)
 	ui.bindWheel:Refresh()
@@ -1108,6 +1347,8 @@ canvas:SetScript("OnHide", function()
 	settleDraft()
 	ns.EmoteMenu.Close()
 	ns.IconPicker.Close()
+	ns.Widgets.CloseMenu()
+	if ui.renameBox then ui.renameBox:ClearFocus() end
 end)
 
 -- Called by the Settings panel on canvas pages.
@@ -1159,6 +1400,15 @@ local function registerAppearance(parent)
 		function() return ns.DB.Profile().sounds end,
 		function(v) ns.DB.Profile().sounds = v end)
 	Settings.CreateCheckbox(sub, sounds, "Play sounds when hovering, firing and cancelling.")
+
+	local remember = Settings.RegisterProxySetting(sub, "JEST_REMEMBER_WHEEL", varType.Boolean or "boolean",
+		"Reopen on last wheel used", ns.Defaults.profile.rememberWheel,
+		function() return ns.DB.Profile().rememberWheel end,
+		function(v)
+			ns.DB.Profile().rememberWheel = v and true or false
+			ns.Changed()
+		end)
+	Settings.CreateCheckbox(sub, remember, "With more than one wheel: open on the wheel you used last. Off, it always opens on the first wheel, so directions stay the same every time.")
 end
 
 function Panel.Register()

@@ -54,6 +54,54 @@ local function rotateClockwise(texture, degrees)
 	texture:SetRotation(-math.rad(degrees))
 end
 
+-- Rounded dark label that sizes itself to its text: the slice name under the wheel, and the
+-- wheel name above it. pill:SetLabel(text, dim) shows it (hides it for no text); text wider
+-- than pill.maxWidth ends in "...". Its height is fixed, so things anchored to it don't move.
+local PillMixin = {}
+
+function View.CreatePill(parent, font)
+	local pill = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+	pill:SetBackdrop({
+		bgFile = "Interface\\Buttons\\WHITE8x8",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		edgeSize = 12,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+	pill:SetBackdropColor(0, 0, 0, 0.75)
+	pill:Hide()
+	pill.text = pill:CreateFontString(nil, "OVERLAY", font)
+	pill.text:SetPoint("CENTER")
+	pill.text:SetWordWrap(false)
+	pill.maxWidth = 200
+	local _, fontSize = pill.text:GetFont()
+	pill:SetHeight(math.ceil((fontSize or 12) * 1.15) + 2 * CAPTION_PAD_Y)
+	for k, fn in pairs(PillMixin) do
+		pill[k] = fn
+	end
+	return pill
+end
+
+function PillMixin:SetLabel(text, dim)
+	local label = self.text
+	label:SetText(text or "")
+	if not text or text == "" then
+		self:Hide()
+		return
+	end
+	label:SetWidth(0)
+	local width = math.min(label:GetStringWidth() or 0, self.maxWidth - 2 * CAPTION_PAD_X)
+	label:SetWidth(width)
+	self:SetWidth(width + 2 * CAPTION_PAD_X)
+	if dim then
+		label:SetTextColor(0.6, 0.6, 0.6)
+		self:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.9)
+	else
+		label:SetTextColor(1, 1, 1)
+		self:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 0.6)
+	end
+	self:Show()
+end
+
 local ViewMixin = {}
 
 function View.Create(parent, opts)
@@ -85,21 +133,8 @@ function View.Create(parent, opts)
 	addCircleMask(f, v.centreIcon)
 
 	-- The hovered slice's name, in a pill just below the ring, where long names have room.
-	-- Placed and sized in Layout / SetCentre.
-	local caption = CreateFrame("Frame", nil, f, "BackdropTemplate")
-	caption:SetBackdrop({
-		bgFile = "Interface\\Buttons\\WHITE8x8",
-		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-		edgeSize = 12,
-		insets = { left = 3, right = 3, top = 3, bottom = 3 },
-	})
-	caption:SetBackdropColor(0, 0, 0, 0.75)
-	caption:Hide()
-	v.caption = caption
-	v.captionText = caption:CreateFontString(nil, "OVERLAY", opts.labelFont or "GameFontHighlightLarge")
-	v.captionText:SetPoint("CENTER")
-	v.captionText:SetWordWrap(false)
-	v.captionMaxWidth = 200
+	v.caption = View.CreatePill(f, opts.labelFont or "GameFontHighlightLarge")
+	v.captionText = v.caption.text
 	return v
 end
 
@@ -192,10 +227,7 @@ function ViewMixin:Layout(slices, o)
 	self.centreIcon:SetSize(o.centreIconSize, o.centreIconSize)
 	self.caption:ClearAllPoints()
 	self.caption:SetPoint("TOP", f, "CENTER", 0, -(outer + CAPTION_GAP))
-	self.captionMaxWidth = 2 * outer
-	-- Fixed height, so things anchored below the pill don't move as the text changes.
-	local _, fontSize = self.captionText:GetFont()
-	self.caption:SetHeight(math.ceil((fontSize or 12) * 1.15) + 2 * CAPTION_PAD_Y)
+	self.caption.maxWidth = 2 * outer
 
 	self.hasArt = n >= WEDGE_MIN and n <= WEDGE_MAX
 	self.backdrop:SetShown(not self.hasArt)
@@ -328,25 +360,7 @@ function ViewMixin:SetCentre(texture, text, dim)
 	else
 		self.centreIcon:Hide()
 	end
-	local label = self.captionText
-	label:SetText(text or "")
-	if not text or text == "" then
-		self.caption:Hide()
-		return
-	end
-	-- Fit the pill to the text; names wider than the wheel end in "...".
-	label:SetWidth(0)
-	local width = math.min(label:GetStringWidth() or 0, self.captionMaxWidth - 2 * CAPTION_PAD_X)
-	label:SetWidth(width)
-	self.caption:SetWidth(width + 2 * CAPTION_PAD_X)
-	if dim then
-		label:SetTextColor(0.6, 0.6, 0.6)
-		self.caption:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.9)
-	else
-		label:SetTextColor(1, 1, 1)
-		self.caption:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 0.6)
-	end
-	self.caption:Show()
+	self.caption:SetLabel(text, dim)
 end
 
 function ViewMixin:Update(elapsed)

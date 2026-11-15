@@ -16,11 +16,12 @@ for p in sorted(root.rglob("*.lua")):
 snip = lua.eval("""function(src)
   local ns = {}
   local f = assert(loadstring(src)); f(nil, ns)
-  return ns.Snippets.OnClick
+  return ns.Snippets
 end""")((root / "Jest/Secure/Snippets.lua").read_text(encoding="utf-8"))
-good, err = check("local self, button, down = ...\n" + snip, "@snippet")
-print(("OK   " if good else "FAIL ") + "snippet body" + ("" if good else f"  {err}"))
-ok &= bool(good)
+for name in ("OnClick", "OnPage"):
+    good, err = check("local self, button, down = ...\n" + snip[name], "@snippet." + name)
+    print(("OK   " if good else "FAIL ") + "snippet " + name + ("" if good else f"  {err}"))
+    ok &= bool(good)
 
 # Geometry: compare against the snippet's formula and expected directions.
 geo = lua.execute((root / "Jest/UI/Geometry.lua").read_text(encoding="utf-8"))

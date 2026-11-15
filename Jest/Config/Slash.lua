@@ -38,10 +38,82 @@ local KIND_ALIASES = {
 	item = "item", i = "item", spell = "spell", s = "spell", toy = "toy",
 }
 
-add("list", "list - show the wheel's slices", function()
-	Print(("Profile '%s':"):format(Escape(ns.DB.ProfileName())))
+-- "Emotes" or, with several wheels, "wheel 2 'Potions'".
+local function wheelTitle(i)
+	i = i or ns.DB.EditIndex()
+	local name = Escape(ns.DB.Wheel(i).name)
+	if #ns.DB.Wheels() == 1 then return "'" .. name .. "'" end
+	return ("wheel %d '%s'"):format(i, name)
+end
+
+add("list", "list - show the slices of the wheel being edited", function()
+	Print(("Profile '%s', %s:"):format(Escape(ns.DB.ProfileName()), wheelTitle()))
 	for i, s in ipairs(slices()) do
 		Print(describe(i, s))
+	end
+end)
+
+local function listWheels()
+	local editing = ns.DB.EditIndex()
+	for i, wheel in ipairs(ns.DB.Wheels()) do
+		Print(("%s%d. %s |cff888888(%d slices)|r"):format(i == editing and "> " or "  ", i, Escape(wheel.name), #wheel.slices))
+	end
+	Print("Commands edit the wheel marked >. Scroll the mouse wheel while the wheel is open to switch.")
+end
+
+add("wheel", "wheel [<n> || add [name] || rename <name> || remove <n> yes] - list wheels, pick the one to edit, or add/rename/remove one", function(rest)
+	local sub, arg = rest:match("^(%S*)%s*(.-)$")
+	sub = (sub or ""):lower()
+	if sub == "" then
+		listWheels()
+	elseif tonumber(sub) then
+		local i = tonumber(sub)
+		if not ns.DB.Wheel(i) or i ~= math.floor(i) then
+			Print(("Wheel number must be 1-%d."):format(#ns.DB.Wheels()))
+			return
+		end
+		ns.DB.SetEditIndex(i)
+		Print("Now editing " .. wheelTitle(i) .. ".")
+		ns.Panel.Refresh() -- nothing to re-apply; just show it if the options are open
+	elseif sub == "add" then
+		local i, err = ns.DB.AddWheel(arg)
+		if not i then
+			Print(err)
+			return
+		end
+		ns.DB.SetEditIndex(i)
+		Print(("Added %s with %d empty slices. Fill them with /jest set, or in the options."):format(wheelTitle(i), #ns.DB.Wheel(i).slices))
+		ns.Changed()
+	elseif sub == "rename" then
+		local name = ns.DB.CleanWheelName(arg)
+		if not name then
+			Print("Usage: /jest wheel rename <name>")
+			return
+		end
+		ns.DB.Wheel().name = name
+		Print("Renamed to " .. wheelTitle() .. ".")
+		ns.Changed()
+	elseif sub == "remove" then
+		local nText, confirm = arg:match("^(%S+)%s*(%S*)$")
+		local i = tonumber(nText or "")
+		if not (i and ns.DB.Wheel(i)) then
+			Print(("Usage: /jest wheel remove <1-%d> yes"):format(#ns.DB.Wheels()))
+			return
+		end
+		if confirm ~= "yes" then
+			Print(("This deletes %s and its slices. Type |cffffff00/jest wheel remove %d yes|r to confirm."):format(wheelTitle(i), i))
+			return
+		end
+		local title = wheelTitle(i)
+		local removed, err = ns.DB.RemoveWheel(i)
+		if not removed then
+			Print(err)
+			return
+		end
+		Print("Removed " .. title .. ".")
+		ns.Changed()
+	else
+		Print("Usage: /jest " .. commands.wheel.usage)
 	end
 end)
 
@@ -127,8 +199,8 @@ end)
 
 add("test", "test <n> - perform an emote slice now", function(rest)
 	local i = parseIndex(rest)
-	if i and not ns.SecureWheel.TestEmote(i) then
-		Print("Only emote slices can be tested from chat; macros fire from the wheel.")
+	if i and not ns.SecureWheel.TestEmote(ns.DB.EditIndex(), i) then
+		Print("Only emote slices can be tested from chat; other slices fire from the wheel.")
 	end
 end)
 
@@ -185,7 +257,7 @@ end)
 
 add("reset", "reset yes - restore the default wheel for this profile", function(rest)
 	if rest ~= "yes" then
-		Print("This replaces every slice and setting in this profile. Type |cffffff00/jest reset yes|r to confirm.")
+		Print("This replaces every wheel, slice and setting in this profile. Type |cffffff00/jest reset yes|r to confirm.")
 		return
 	end
 	ns.DB.ResetProfile()

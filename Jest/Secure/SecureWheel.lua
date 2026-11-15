@@ -8,9 +8,14 @@ ns.SecureWheel = SW
 
 local btn, anchor
 local pending = false
--- [slice index] = function, run by the custom "jest" action type for slices that have no
--- secure action type of their own (emotes, battle pets).
+-- [button name, e.g. "w2s3"] = function, run by the custom "jest" action type for slices that
+-- have no secure action type of their own (emotes, battle pets).
 local runners = {}
+-- Copy of the wheels as last applied. The in-game wheel draws from this rather than the DB, so
+-- what it shows always matches what the secure button will fire, even when edits made in
+-- combat are still waiting to apply.
+local applied = {}
+local SliceButton = ns.Snippets.SliceButton
 
 local function performEmote(token)
 	local perform = (C_ChatInfo and C_ChatInfo.PerformEmote) or DoEmote
@@ -34,26 +39,35 @@ local function create()
 	-- type = "jest": SecureActionButtonTemplate calls this method (as insecure code) for slices
 	-- without a secure action type, e.g. emotes, which use the emote API rather than macro text.
 	function btn:jest(_, button)
-		local i = tonumber(button and button:match("^slice(%d+)$"))
-		local run = i and runners[i]
+		local run = button and runners[button]
 		if run then
 			run()
 		end
 	end
 
 	-- Called from the snippet through CallMethod.
-	function btn:JestOnOpen()
-		ns.Skin.Open()
+	function btn:JestOnOpen(page)
+		ns.Skin.Open(page)
 	end
-	function btn:JestOnClose(idx, reason)
-		ns.Skin.Close(idx, reason)
+	function btn:JestOnPage(page)
+		ns.Skin.ShowPage(page)
 	end
-	function btn:JestOnRepeat(idx)
-		ns.Skin.Repeat(idx)
+	function btn:JestOnClose(idx, reason, page)
+		ns.Skin.Close(idx, reason, page)
+	end
+	function btn:JestOnRepeat(idx, page)
+		ns.Skin.Repeat(idx, page)
 	end
 
 	SecureHandlerSetFrameRef(btn, "anchor", anchor)
 	SecureHandlerWrapScript(btn, "OnClick", header, ns.Snippets.OnClick)
+
+	-- The mouse wheel clicks this while the wheel is open, to switch wheels. A separate button so
+	-- scrolling never clicks JestWheelButton itself, whose release is what fires a slice.
+	local pager = CreateFrame("Button", "JestPagerButton", UIParent, "SecureHandlerClickTemplate")
+	pager:RegisterForClicks("AnyDown", "AnyUp")
+	SecureHandlerSetFrameRef(pager, "wheel", btn)
+	pager:SetAttribute("_onclick", ns.Snippets.OnPage)
 end
 
 -- Push the active profile into secure attributes. Returns false if deferred until after combat.
@@ -68,50 +82,75 @@ function SW.Apply()
 	pending = false
 
 	local profile = ns.DB.Profile()
-	local slices = ns.DB.Wheel().slices
+	local wheels = ns.DB.Wheels()
 
-	for i = 1, ns.MAX_SLICES do
-		local suffix = "-slice" .. i
-		btn:SetAttribute("type" .. suffix, nil)
-		for _, attribute in ipairs(ns.Actions.ATTRIBUTES) do
-			btn:SetAttribute(attribute .. suffix, nil)
+	for w = 1, ns.MAX_WHEELS do
+		for i = 1, ns.MAX_SLICES do
+			local suffix = "-" .. SliceButton(w, i)
+			btn:SetAttribute("type" .. suffix, nil)
+			for _, attribute in ipairs(ns.Actions.ATTRIBUTES) do
+				btn:SetAttribute(attribute .. suffix, nil)
+			end
 		end
-		runners[i] = nil
+		btn:SetAttribute("slices" .. w, nil)
 	end
+	runners = {}
+	applied = {}
 
-	for i, s in ipairs(slices) do
-		if ns.Slices.HasAction(s) then
-			local suffix = "-slice" .. i
-			if s.kind == "macro" then
-				btn:SetAttribute("type" .. suffix, "macro")
-				btn:SetAttribute("macrotext" .. suffix, s.value)
-			elseif s.kind == "emote" then
-				local token = s.value
-				btn:SetAttribute("type" .. suffix, "jest")
-				runners[i] = function() performEmote(token) end
-			else
-				local actionType, attribute, value, run = ns.Actions.Binding(s.kind, s.value)
-				if actionType then
-					btn:SetAttribute("type" .. suffix, actionType)
-					btn:SetAttribute(attribute .. suffix, value)
-				elseif run then
+	for w, wheel in ipairs(wheels) do
+		applied[w] = { name = wheel.name, slices = ns.DB.Copy(wheel.slices) }
+		btn:SetAttribute("slices" .. w, #wheel.slices)
+		for i, s in ipairs(wheel.slices) do
+			if ns.Slices.HasAction(s) then
+				local name = SliceButton(w, i)
+				local suffix = "-" .. name
+				if s.kind == "macro" then
+					btn:SetAttribute("type" .. suffix, "macro")
+					btn:SetAttribute("macrotext" .. suffix, s.value)
+				elseif s.kind == "emote" then
+					local token = s.value
 					btn:SetAttribute("type" .. suffix, "jest")
-					runners[i] = run
+					runners[name] = function() performEmote(token) end
+				else
+					local actionType, attribute, value, run = ns.Actions.Binding(s.kind, s.value)
+					if actionType then
+						btn:SetAttribute("type" .. suffix, actionType)
+						btn:SetAttribute(attribute .. suffix, value)
+					elseif run then
+						btn:SetAttribute("type" .. suffix, "jest")
+						runners[name] = run
+					end
 				end
 			end
 		end
 	end
 
-	btn:SetAttribute("count", #slices)
+	local maxSlices = 0
+	for _, wheel in ipairs(wheels) do
+		maxSlices = math.max(maxSlices, #wheel.slices)
+	end
+	btn:SetAttribute("wheels", #wheels)
+	btn:SetAttribute("maxslices", maxSlices)
+	btn:SetAttribute("remember", profile.rememberWheel and true or false)
 	-- The snippet measures in UIParent units, but the wheel is drawn scaled.
 	btn:SetAttribute("deadzone", profile.deadZone * profile.scale)
-	local last = btn:GetAttribute("last")
-	if last and last > #slices then
-		btn:SetAttribute("last", nil)
+	if (btn:GetAttribute("page") or 1) > #wheels then
+		btn:SetAttribute("page", 1)
+	end
+	-- Forget a "repeat last" target that no longer exists.
+	local lw, ls = btn:GetAttribute("lastwheel"), btn:GetAttribute("lastslice")
+	if lw and not (wheels[lw] and ls and ls <= #wheels[lw].slices) then
+		btn:SetAttribute("lastwheel", nil)
+		btn:SetAttribute("lastslice", nil)
 	end
 
 	ns.Skin.Rebuild()
 	return true
+end
+
+-- The wheels as last applied: { { name =, slices = { ... } }, ... }. Empty before the first apply.
+function SW.Applied()
+	return applied
 end
 
 -- Out of combat only: close a wheel left open (e.g. the key-up was lost to an alt-tab).
@@ -122,9 +161,11 @@ function SW.ForceClose(reason)
 	ns.Skin.Close(nil, reason or "force")
 end
 
--- Perform emote slice i directly (the panel's Test button, /jest test). Macros need the wheel.
-function SW.TestEmote(i)
-	local s = ns.DB.Wheel().slices[i]
+-- Perform emote slice i of wheel w directly (the panel's Test button, /jest test). Macros need
+-- the wheel.
+function SW.TestEmote(w, i)
+	local wheel = ns.DB.Wheel(w)
+	local s = wheel and wheel.slices[i]
 	if ns.Slices.HasAction(s) and ns.Slices.IsEmote(s) then
 		performEmote(s.value)
 		return true
