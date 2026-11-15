@@ -109,5 +109,5 @@ end)
 
 -- Referenced by the TOC's AddonCompartmentFunc.
 function Jest_OnAddonCompartmentClick()
-	ns.Panel.Open()
+	ns.Panel.Toggle()
 end

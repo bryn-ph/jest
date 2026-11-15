@@ -283,7 +283,7 @@ SlashCmdList.JEST = function(msg)
 	local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
 	cmd = (cmd or ""):lower()
 	if cmd == "" then
-		ns.Panel.Open()
+		ns.Panel.Toggle()
 		return
 	end
 	local entry = commands[cmd]
