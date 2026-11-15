@@ -3,6 +3,7 @@ local addonName, ns = ...
 ns.name = addonName
 ns.debug = false
 ns.MAX_SLICES = 12
+ns.MAX_WHEELS = 5
 
 function ns.Print(...)
 	print("|cff66ccffJest|r", ...)
@@ -20,8 +21,8 @@ function ns.Escape(text)
 end
 
 BINDING_HEADER_JEST = "Jest"
-_G["BINDING_NAME_CLICK JestWheelButton:LeftButton"] = "Open emote wheel (hold)"
-_G["BINDING_NAME_CLICK JestWheelButton:repeat"] = "Repeat last emote"
+_G["BINDING_NAME_CLICK JestWheelButton:LeftButton"] = "Open wheel (hold)"
+_G["BINDING_NAME_CLICK JestWheelButton:repeat"] = "Repeat last slice"
 
 -- Events ---------------------------------------------------------------------
 

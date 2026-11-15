@@ -7,6 +7,7 @@ A radial wheel for **WoW: Forever**: emotes, potions, spells and more. Hold a ke
 ## Features
 
 - Hold-to-open wheel with up to 12 slices; release to fire, release in the centre to cancel.
+- Optional extra wheels (up to 5): scroll the mouse wheel while it's open to flip between them, e.g. emotes on one, potions on another.
 - Slices can be any of the game's emotes, a macro (use `/e` for a custom emote line), or anything you can drag: items and consumables, spells, mounts, toys, battle pets and equipment sets.
 - Drag things straight from your bags or spellbook onto the wheel in the options. Item slices show how many you have left.
 - Emotes are tagged **Anim** and/or **Voice** for your character, with filters to find them.
@@ -24,6 +25,9 @@ A radial wheel for **WoW: Forever**: emotes, potions, spells and more. Hold a ke
 |---|---|
 | Release in the centre, or `Esc` | Cancel |
 | `1`–`9`, `0` | Fire that slice |
+| Mouse wheel | Switch to the next or previous wheel (with more than one) |
+
+To add a wheel, click **+** next to the wheel tabs in the options. Double-click a tab to rename it, or right-click it to rename, reorder or delete it. By default the wheel always opens on the first wheel, so directions stay the same; *Appearance → Reopen on last wheel used* changes that.
 
 Changes made in combat apply when combat ends. `/jest help` lists the slash commands.
 

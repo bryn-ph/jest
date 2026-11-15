@@ -15,13 +15,19 @@ local SOUNDS = {
 	hover = "U_CHAT_SCROLL_BUTTON",
 	fire = "IG_MAINMENU_OPTION_CHECKBOX_ON",
 	cancel = "IG_MAINMENU_OPTION_CHECKBOX_OFF",
+	page = "IG_ABILITY_PAGE_TURN",
 }
+local PAGER_GAP = 6            -- between the wheel's outer edge and the page dots
+local DOT_SIZE, DOT_SPACING = 6, 11
 
 -- State
 local deadZoneUI = 28
 local isOpen, openX, openY, openedAt = false, 0, 0, 0
 local hovered
 local lastHoverSound = 0
+local page = 1                 -- wheel showing (index into SecureWheel.Applied())
+local lockdown = false         -- chat lockdown when the wheel opened; greys emote slices
+local layoutOpts
 
 local function play(which)
 	local profile = ns.DB.Profile()
@@ -49,7 +55,23 @@ frame:Hide()
 local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 hint:SetPoint("TOP", view.caption, "BOTTOM", 0, -4) -- under the name pill
 
+-- With more than one wheel: the wheel's name and a dot per wheel, above the ring.
+local pager = CreateFrame("Frame", nil, frame)
+pager:SetSize(1, 1)
+pager:Hide()
+local pagerName = ns.WheelView.CreatePill(pager, "GameFontNormal")
+local dots = {}
+for i = 1, ns.MAX_WHEELS do
+	local dot = pager:CreateTexture(nil, "OVERLAY")
+	dot:SetSize(DOT_SIZE, DOT_SIZE)
+	dot:SetColorTexture(1, 1, 1, 1)
+	ns.WheelView.AddCircleMask(pager, dot)
+	dots[i] = dot
+end
+pagerName:SetPoint("BOTTOM", pager, "CENTER", 0, DOT_SIZE / 2 + 4)
+
 Skin._view = view -- internal; used by the tests
+Skin._pagerName = pagerName
 
 ---------------------------------------------------------------------------
 -- Animations
@@ -79,6 +101,74 @@ end
 closeAnim:SetScript("OnFinished", function()
 	frame:Hide()
 end)
+
+-- A quick dip and settle when scrolling to another wheel.
+local pageAnim = frame:CreateAnimationGroup()
+do
+	local fade = pageAnim:CreateAnimation("Alpha")
+	fade:SetFromAlpha(0.45)
+	fade:SetToAlpha(1)
+	fade:SetDuration(0.14)
+	fade:SetSmoothing("OUT")
+	local grow = pageAnim:CreateAnimation("Scale")
+	grow:SetScaleFrom(0.94, 0.94)
+	grow:SetScaleTo(1, 1)
+	grow:SetDuration(0.14)
+	grow:SetSmoothing("OUT")
+end
+
+---------------------------------------------------------------------------
+-- Wheels
+---------------------------------------------------------------------------
+local function wheels()
+	return ns.SecureWheel.Applied()
+end
+
+local function pageSlices()
+	local w = wheels()[page]
+	return w and w.slices or {}
+end
+
+local function updatePager()
+	local list = wheels()
+	local count = #list
+	pager:SetShown(count > 1)
+	if count <= 1 then return end
+	pagerName:SetLabel(list[page] and list[page].name or "")
+	local left = -(count - 1) * DOT_SPACING / 2
+	for i, dot in ipairs(dots) do
+		if i <= count then
+			dot:ClearAllPoints()
+			dot:SetPoint("CENTER", pager, "CENTER", left + (i - 1) * DOT_SPACING, 0)
+			if i == page then
+				dot:SetVertexColor(1, 0.82, 0.2, 1)
+			else
+				dot:SetVertexColor(1, 1, 1, 0.35)
+			end
+			dot:Show()
+		else
+			dot:Hide()
+		end
+	end
+end
+
+-- Mark emote slices unusable while chat is locked down, then refresh icons, labels and counts.
+local function refreshSlots()
+	local slices = pageSlices()
+	for i = 1, view.n do
+		view.slots[i].locked = lockdown and ns.Slices.IsEmote(slices[i]) or false
+	end
+	view:RefreshContent(slices)
+end
+
+-- Lay out wheel p (clamped to the wheels that exist).
+local function showWheel(p)
+	page = (wheels()[p] and p) or 1
+	if layoutOpts then
+		view:Layout(pageSlices(), layoutOpts)
+	end
+	updatePager()
+end
 
 ---------------------------------------------------------------------------
 -- Hover / centre
@@ -127,35 +217,38 @@ function Skin.Rebuild()
 	local profile = ns.DB.Profile()
 	deadZoneUI = profile.deadZone * profile.scale
 	frame:SetScale(profile.scale)
-	view:Layout(ns.DB.Wheel().slices, {
+	layoutOpts = {
 		radius = profile.radius,
 		deadZone = profile.deadZone,
 		iconSize = ICON_SIZE,
 		centreIconSize = CENTRE_ICON_SIZE,
-	})
+	}
+	local outer = profile.radius + ICON_SIZE * 0.85 -- matches WheelView's outer edge
+	pager:ClearAllPoints()
+	pager:SetPoint("CENTER", frame, "CENTER", 0, outer + PAGER_GAP)
+	pagerName.maxWidth = 2 * outer
+	showWheel(page)
 	hovered = nil
 end
 
 ns.OnVisualsStale(function()
 	if view.n > 0 then
-		view:RefreshContent(ns.DB.Wheel().slices)
+		refreshSlots()
 	end
 end)
 
-function Skin.Open()
+-- p: the wheel the snippet opened on.
+function Skin.Open(p)
+	if p and p ~= page then showWheel(p) end
 	openX, openY = cursorUI() -- same point the snippet anchors to via $cursor
 	local cx, cy = GetCursorPosition()
 	local eff = frame:GetEffectiveScale()
 	frame:ClearAllPoints()
 	frame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx / eff, cy / eff)
 
-	local lockdown = C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown()
+	lockdown = (C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown()) or false
 	view:ResetSlots()
-	for i = 1, view.n do
-		local s = view.slots[i]
-		s.locked = lockdown and s.isEmote or false
-	end
-	view:RefreshContent(ns.DB.Wheel().slices) -- current counts; greys locked and used-up slices
+	refreshSlots() -- current counts; greys locked and used-up slices
 
 	if IsMouselooking() then
 		hint:SetText("Release right-click to aim, or press 1-" .. math.min(view.n, 9))
@@ -177,8 +270,24 @@ function Skin.Open()
 	openAnim:Play()
 end
 
+-- Scrolled to wheel p while open.
+function Skin.ShowPage(p)
+	if not isOpen then return end
+	showWheel(p)
+	view:ResetSlots()
+	refreshSlots()
+	hovered = nil
+	view:ResetHighlight()
+	updateCentre(nil) -- the next frame's hover check picks the slice under the cursor
+	play("page")
+	pageAnim:Stop()
+	pageAnim:Play()
+end
+
 -- idx: slice that fired (nil = cancelled). reason: "mouse" | "key" | "deadzone" | "cancel" | ...
-function Skin.Close(idx, reason)
+-- p: the wheel it was on.
+function Skin.Close(idx, reason, p)
+	if p and p ~= page then showWheel(p) end
 	if ns.debug and (reason == "mouse" or reason == "deadzone") then
 		local x, y = cursorUI()
 		local skinIdx = ns.Geometry.SliceAt(x - openX, y - openY, view.n, deadZoneUI)
@@ -202,7 +311,7 @@ function Skin.Close(idx, reason)
 	end
 end
 
-function Skin.Repeat(idx)
-	ns.Debug("repeat slice", idx)
+function Skin.Repeat(idx, p)
+	ns.Debug("repeat slice", idx, "of wheel", p)
 	play("fire")
 end

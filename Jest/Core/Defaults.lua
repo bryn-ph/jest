@@ -8,6 +8,7 @@ ns.Defaults = {
 		deadZone = 28, -- releasing inside this radius cancels
 		scale = 1,
 		sounds = true,
+		rememberWheel = false, -- reopen on the wheel used last, instead of the first
 		wheels = {
 			{
 				name = "Emotes",
@@ -35,6 +36,8 @@ ns.Limits = {
 }
 
 ns.LABEL_MAX = 40
+ns.WHEEL_NAME_MAX = 24
+ns.NEW_WHEEL_SLICES = 4 -- empty slices a new wheel starts with, ready to drop things onto
 
 -- Emotes have no icons of their own; these are thematic stand-ins.
 ns.EmoteIcons = {

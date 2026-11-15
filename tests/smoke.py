@@ -141,22 +141,22 @@ local function check(cond, msg) if not cond then fails[#fails+1] = msg end end
 -- ADDON_LOADED
 for _, fn in ipairs({ ns.DB.Init, ns.Panel.Register, ns.SecureWheel.Apply }) do fn() end
 local btn = JestWheelButton
-check(btn.__attrs.count == 8, 'count attr = 8')
-check(btn.__attrs['type-slice1'] == 'jest', 'slice1 uses custom type')
+check(btn.__attrs.slices1 == 8, 'count attr = 8')
+check(btn.__attrs['type-w1s1'] == 'jest', 'slice1 uses custom type')
 check(btn.__attrs.useOnKeyDown == false, 'useOnKeyDown false')
 
 -- custom type fires native emote
-btn:jest(nil, 'slice2')
+btn:jest(nil, 'w1s2')
 check(__sent[#__sent] == 'emote:DANCE', 'slice2 performs DANCE, got ' .. tostring(__sent[#__sent]))
 
 -- slash commands
 local slash = SlashCmdList.JEST
 slash('set 3 macro /cast Foo\\n/say hi')
-check(btn.__attrs['type-slice3'] == 'macro', 'slice3 macro type')
-check(btn.__attrs['macrotext-slice3'] == '/cast Foo\n/say hi', 'macro newline escape')
+check(btn.__attrs['type-w1s3'] == 'macro', 'slice3 macro type')
+check(btn.__attrs['macrotext-w1s3'] == '/cast Foo\n/say hi', 'macro newline escape')
 slash('set 9 macro /e waves a tiny flag.')
-check(btn.__attrs.count == 9, 'append to 9')
-check(btn.__attrs['type-slice9'] == 'macro' and btn.__attrs['macrotext-slice9'] == '/e waves a tiny flag.', 'custom emote line is a macro')
+check(btn.__attrs.slices1 == 9, 'append to 9')
+check(btn.__attrs['type-w1s9'] == 'macro' and btn.__attrs['macrotext-w1s9'] == '/e waves a tiny flag.', 'custom emote line is a macro')
 slash('set 4 text waves')
 check(ns.DB.Wheel().slices[4].kind == 'emote', 'text kind no longer accepted')
 slash('set 1 emote /roar')
@@ -271,7 +271,7 @@ check(ui.emoteDropdown.value == 'DANCE', 'slice 2 loaded')
 ui.kind.macro:Click()
 check(ui.multiBox:GetText() == '/dance', 'emote->macro converts to /dance, got ' .. ui.multiBox:GetText())
 ui.save:Click()
-check(btn.__attrs['type-slice2'] == 'macro' and btn.__attrs['macrotext-slice2'] == '/dance', 'macro applied to secure button')
+check(btn.__attrs['type-w1s2'] == 'macro' and btn.__attrs['macrotext-w1s2'] == '/dance', 'macro applied to secure button')
 check(not ui.test:IsEnabled(), 'test disabled for macro slices')
 -- macro -> emote: a lone "/dance" converts back to the DANCE emote
 ui.kind.emote:Click()
@@ -634,20 +634,20 @@ __cursor = { 'item', 5512 }
 pv.slots[2].__scripts.OnReceiveDrag(pv.slots[2])
 check(list()[2].kind == 'item' and list()[2].value == 5512, 'drop onto a slice replaces it')
 check(__cursor == nil, 'cursor cleared after a drop')
-check(btn.__attrs['type-slice2'] == 'item' and btn.__attrs['item-slice2'] == 'item:5512', 'item: secure item attributes')
+check(btn.__attrs['type-w1s2'] == 'item' and btn.__attrs['item-w1s2'] == 'item:5512', 'item: secure item attributes')
 check(ui.status:GetText():find('Healthstone', 1, true) and ui.undo.__shown, 'drop reports and offers undo')
 check(ui.editorTitle:GetText() == 'Slice 2' and ui.actionBox.__shown, 'editor jumps to the slice, Action tab')
 check(ui.actionBox.text:GetText() == 'Healthstone' and ui.actionBox.kind:GetText() == 'Item x3', 'action box shows name, kind and count, got ' .. ui.actionBox.kind:GetText())
 check(pv.slots[2].count:GetText() == '3', 'item count on the preview slice')
 ui.undo:Click()
 check(list()[2] == before2, 'undo restores the replaced slice')
-check(btn.__attrs['item-slice2'] == nil and btn.__attrs['type-slice2'] == 'jest', 'undo re-applies the secure button')
+check(btn.__attrs['item-w1s2'] == nil and btn.__attrs['type-w1s2'] == 'jest', 'undo re-applies the secure button')
 
 local n0 = #list()
 __cursor = { 'spell', 1, 'spell', 2061 }
 ui.centreDrop.__scripts.OnReceiveDrag(ui.centreDrop)
 check(#list() == n0 + 1 and list()[n0 + 1].kind == 'spell', 'drop in the centre adds a slice')
-check(btn.__attrs['type-slice' .. (n0 + 1)] == 'spell' and btn.__attrs['spell-slice' .. (n0 + 1)] == 2061, 'spell: secure spell attributes')
+check(btn.__attrs['type-w1s' .. (n0 + 1)] == 'spell' and btn.__attrs['spell-w1s' .. (n0 + 1)] == 2061, 'spell: secure spell attributes')
 check(pv.slots[n0 + 1].label == 'Flash Heal', 'spell name on the wheel')
 ui.undo:Click()
 check(#list() == n0, 'undo removes an added slice')
@@ -655,23 +655,23 @@ check(#list() == n0, 'undo removes an added slice')
 __cursor = { 'mount', 6 }
 pv.slots[3].__scripts.OnClick(pv.slots[3])
 check(list()[3].kind == 'mount', 'clicking a slice while holding something drops it')
-check(btn.__attrs['type-slice3'] == 'spell' and btn.__attrs['spell-slice3'] == 458, 'mount casts its summon spell')
+check(btn.__attrs['type-w1s3'] == 'spell' and btn.__attrs['spell-w1s3'] == 458, 'mount casts its summon spell')
 
 __cursor = { 'battlepet', 'BattlePet-0-00000ABCDEF0' }
 ui.actionBox.__scripts.OnReceiveDrag(ui.actionBox)
-check(list()[3].kind == 'pet' and btn.__attrs['type-slice3'] == 'jest', 'pet uses the insecure runner')
-btn:jest(nil, 'slice3')
+check(list()[3].kind == 'pet' and btn.__attrs['type-w1s3'] == 'jest', 'pet uses the insecure runner')
+btn:jest(nil, 'w1s3')
 check(__summoned == 'BattlePet-0-00000ABCDEF0', 'pet summoned when fired')
 
 __cursor = { 'item', 54452 }
 pv.slots[4].__scripts.OnReceiveDrag(pv.slots[4])
-check(btn.__attrs['type-slice4'] == 'toy' and btn.__attrs['toy-slice4'] == 54452, 'toy: secure toy attributes')
+check(btn.__attrs['type-w1s4'] == 'toy' and btn.__attrs['toy-w1s4'] == 54452, 'toy: secure toy attributes')
 __cursor = { 'equipmentset', 3 }
 pv.slots[5].__scripts.OnReceiveDrag(pv.slots[5])
-check(btn.__attrs['type-slice5'] == 'equipmentset' and btn.__attrs['equipmentset-slice5'] == 'Tank', 'equipment set attributes')
+check(btn.__attrs['type-w1s5'] == 'equipmentset' and btn.__attrs['equipmentset-w1s5'] == 'Tank', 'equipment set attributes')
 __cursor = { 'macro', 121 }
 pv.slots[6].__scripts.OnReceiveDrag(pv.slots[6])
-check(list()[6].label == 'Party' and btn.__attrs['macrotext-slice6'] == '/cheer\n/dance', 'dropped macro becomes a macro slice')
+check(list()[6].label == 'Party' and btn.__attrs['macrotext-w1s6'] == '/cheer\n/dance', 'dropped macro becomes a macro slice')
 
 local slice7 = list()[7]
 __cursor = { 'money', 5 }
@@ -717,6 +717,149 @@ SlashCmdList.JEST('set 1 spell 2061')
 check(list()[1].kind == 'spell' and list()[1].value == 2061, 'slash set spell <id>')
 SlashCmdList.JEST('set 1 item abc')
 check(list()[1].kind == 'spell', 'slash rejects a non-numeric ID')
+
+-- ===== multiple wheels =====
+JestDB = nil; JestCharDB = nil; ns.DB.Init(); ns.Changed()
+check(#ns.DB.Wheels() == 1 and btn.__attrs.wheels == 1 and btn.__attrs.slices1 == 8, 'starts with one wheel')
+check(not ui.tabs[2] or not ui.tabs[2].__shown, 'one tab for one wheel')
+
+-- "+" adds a wheel, selects it and opens the rename box
+ui.newWheel:Click()
+check(#ns.DB.Wheels() == 2 and ns.DB.EditIndex() == 2, '+ adds a wheel and edits it')
+check(ui.renameBox.__shown and ui.renameBox:GetText() == 'Wheel 2', 'new wheel opens the rename box')
+ui.renameBox:SetText('  Potions  ')
+ui.renameBox.__scripts.OnTextChanged(ui.renameBox)
+check(ui.tabs[2].text:GetText() == '  Potions  ' and ui.tabs[2].text.__alpha == 0, 'the tab sizes to the name being typed, its own label hidden under the box')
+ui.renameBox.__scripts.OnEnterPressed(ui.renameBox)
+ui.renameBox.__scripts.OnEditFocusLost(ui.renameBox) -- the mock's ClearFocus doesn't fire it
+check(ns.DB.Wheel(2).name == 'Potions' and ui.tabs[2].text:GetText() == 'Potions' and ui.tabs[2].text.__alpha == 1, 'rename trims, saves and shows on the tab')
+check(#list() == 4 and not ns.Slices.HasAction(list()[1]), 'a new wheel has 4 empty slices')
+check(btn.__attrs.wheels == 2 and btn.__attrs.slices2 == 4, 'second wheel applied')
+ui.tabs[2].__scripts.OnDoubleClick(ui.tabs[2])
+ui.renameBox:SetText('Nope')
+ui.renameBox.__scripts.OnEscapePressed(ui.renameBox)
+ui.renameBox.__scripts.OnEditFocusLost(ui.renameBox)
+check(ns.DB.Wheel(2).name == 'Potions', 'Esc cancels a rename')
+
+__items[5512].count = 3
+__cursor = { 'item', 5512 }
+pv.slots[1].__scripts.OnReceiveDrag(pv.slots[1])
+check(btn.__attrs['type-w2s1'] == 'item' and btn.__attrs['item-w2s1'] == 'item:5512', 'drop on wheel 2 sets its attributes')
+check(btn.__attrs['type-w1s1'] == 'jest', 'wheel 1 untouched')
+ui.tabs[1]:Click()
+check(ns.DB.EditIndex() == 1 and pv.n == 8 and ui.editorTitle:GetText() == 'Slice 1', 'tab 1 shows wheel 1')
+ui.tabs[2]:Click()
+check(ns.DB.EditIndex() == 2 and pv.n == 4, 'tab 2 shows wheel 2')
+
+-- the secure snippet, run against a mock handle
+local snippet = assert(loadstring('local self, button, down = ...\n' .. ns.Snippets.OnClick))
+local anchor = newObj('anchor')
+anchor.GetMousePosition = function() return __mx, __my end
+anchor.GetWidth = function() return 1000 end
+anchor.GetHeight = function() return 1000 end
+local bound = {}
+btn.GetFrameRef = function() return anchor end
+btn.ClearBindings = function() bound = {} end
+btn.SetBindingClick = function(_, _, key, _, name) bound[key] = name end
+btn.CallMethod = function(self, name, ...) return self[name](self, ...) end
+local function click(b, d) return snippet(btn, b, d) end
+local pagerSnippet = assert(loadstring('local self, button, down = ...\n' .. ns.Snippets.OnPage))
+local pager = JestPagerButton
+check(pager and pager.__attrs._onclick == ns.Snippets.OnPage, 'pager button carries the paging snippet')
+pager.GetFrameRef = function() return btn end
+local function scroll(b, d) return pagerSnippet(pager, b, d) end
+local function bindingsCopy() local c = {} for k, v in pairs(bound) do c[k] = v end return c end
+local function sameBindings(a) for k, v in pairs(a) do if bound[k] ~= v then return false end end for k in pairs(bound) do if a[k] == nil then return false end end return true end
+
+check(click('LeftButton', true) == false and btn.__attrs.open, 'key down opens')
+check(bound.MOUSEWHEELDOWN == 'next' and bound.MOUSEWHEELUP == 'prev', 'mouse wheel bound with two wheels')
+check(bound['8'] == 'pick8' and bound['9'] == nil, 'number keys for the biggest wheel (8 slices)')
+local openBindings = bindingsCopy()
+check(skin.__shown and skinView.n == 8 and ns.Skin._pagerName.text:GetText() == 'Emotes', 'skin shows wheel 1 and its name')
+scroll('next', true); scroll('next', false) -- one notch as a down + up pair
+check(btn.__attrs.page == 2 and skinView.n == 4, 'one notch scrolls to wheel 2')
+check(sameBindings(openBindings), 'scrolling leaves the key bindings alone')
+check(click('pick5', false) == false and btn.__attrs.open, 'a number past the wheel showing does nothing')
+check(ns.Skin._pagerName.text:GetText() == 'Potions' and skinView.slots[1].label == 'Healthstone', 'skin redraws for wheel 2')
+scroll('next', false) -- an up on its own still counts
+check(btn.__attrs.page == 1, 'next wraps around to wheel 1')
+scroll('prev', true)
+check(btn.__attrs.page == 2, 'prev wraps backwards')
+__mx, __my = 0.5, 0.6 -- straight up: slice 1
+check(click('LeftButton', false) == 'w2s1', 'release fires slice 1 of wheel 2')
+check(not skin.__shown, 'wheel closes')
+check(click('repeat', false) == 'w2s1', 'repeat re-fires the last slice, on its wheel')
+click('LeftButton', true)
+check(btn.__attrs.page == 1 and skinView.n == 8, 'reopens on the first wheel by default')
+click('cancel', false)
+ns.DB.Profile().rememberWheel = true; ns.Changed()
+click('LeftButton', true); scroll('next', true); click('cancel', false)
+click('LeftButton', true)
+check(btn.__attrs.page == 2, 'with remember on, reopens on the last wheel')
+check(click('pick3', false) == 'w2s3', 'number keys pick from the wheel showing')
+scroll('next', false); scroll('next', true)
+check(btn.__attrs.page == 2, 'scrolling does nothing while closed')
+ns.DB.Profile().rememberWheel = false; ns.Changed()
+
+-- right-click menu: delete, then undo
+ui.tabs[2]:Click('RightButton')
+check(ns.Widgets.MenuIsOpen() and JestContextMenu.rows[4].text:GetText() == 'Delete', 'right-click opens the wheel menu')
+JestContextMenu.rows[4]:Click()
+check(#ns.DB.Wheels() == 1 and btn.__attrs.wheels == 1 and btn.__attrs['type-w2s1'] == nil, 'delete removes the wheel and its attributes')
+check(ui.undo.__shown and ui.status:GetText():find('Potions', 1, true), 'delete names the wheel and offers undo')
+ui.undo:Click()
+check(#ns.DB.Wheels() == 2 and ns.DB.Wheel(2).name == 'Potions' and btn.__attrs['item-w2s1'] == 'item:5512', 'undo brings the wheel back')
+check(ns.DB.EditIndex() == 2, 'undo shows the restored wheel')
+ui.tabs[1]:Click('RightButton')
+check(JestContextMenu.rows[2].text:GetText() == 'Move left' and not JestContextMenu.rows[2]:IsEnabled(), 'first wheel cannot move left')
+JestContextMenu.rows[3]:Click()
+check(ns.DB.Wheel(1).name == 'Potions' and ns.DB.Wheel(2).name == 'Emotes' and ns.DB.EditIndex() == 2, 'move right keeps the moved wheel selected')
+check(btn.__attrs['item-w1s1'] == 'item:5512', 'moving re-applies the secure button')
+ns.DB.MoveWheel(2, 1); ns.Changed()
+
+-- limits
+for _ = 1, 3 do ns.DB.AddWheel() end
+ns.Changed()
+check(#ns.DB.Wheels() == ns.MAX_WHEELS and not ns.DB.AddWheel(), 'at most 5 wheels')
+check(not ui.newWheel.__shown, '+ hidden when full')
+check(btn.__attrs.slices5 == 4, 'fifth wheel applied')
+
+-- slash commands
+SlashCmdList.JEST('wheel 2')
+check(ns.DB.EditIndex() == 2, '/jest wheel <n> picks the wheel to edit')
+SlashCmdList.JEST('set 2 spell 2061')
+check(btn.__attrs['spell-w2s2'] == 2061, 'slash set edits the chosen wheel')
+SlashCmdList.JEST('wheel rename Combat')
+check(ns.DB.Wheel(2).name == 'Combat', 'slash rename')
+SlashCmdList.JEST('wheel remove 5')
+check(#ns.DB.Wheels() == 5, 'slash remove asks for confirmation')
+SlashCmdList.JEST('wheel remove 5 yes')
+check(#ns.DB.Wheels() == 4 and btn.__attrs.slices5 == nil, 'slash remove')
+SlashCmdList.JEST('wheel add Mounts')
+check(ns.DB.Wheel(5).name == 'Mounts' and ns.DB.EditIndex() == 5, 'slash add names and selects the wheel')
+SlashCmdList.JEST('wheel')
+SlashCmdList.JEST('list')
+SlashCmdList.JEST('wheel 9')
+check(ns.DB.EditIndex() == 5, 'bad wheel number ignored')
+
+-- saved data with several wheels
+JestDB = { version = 2, profiles = { Default = { rememberWheel = 'yes', wheels = {
+	{ name = 'A', slices = { { kind = 'emote', value = 'WAVE' } } },
+	{ name = 123, slices = { { kind = 'emote', value = 'BOW' } } },
+	{ name = 'Broken', slices = { { kind = 'nope' } } },
+	'junk',
+	{ name = string.rep('n', 50) .. '|cff', slices = { { kind = 'emote', value = '' } } },
+	{ slices = { { kind = 'emote', value = 'CHEER' } } },
+	{ slices = { { kind = 'emote', value = 'LAUGH' } } },
+	{ slices = { { kind = 'emote', value = 'DANCE' } } },
+} } } }
+JestCharDB = { profile = 'Default' }
+ns.DB.Init(); ns.Changed()
+local ws = ns.DB.Wheels()
+check(#ws == 5 and ws[5].slices[1].value == 'LAUGH', 'broken wheels dropped, the rest capped at 5')
+check(ws[2].name == 'Wheel 2' and #ws[3].name == 24 and not ws[3].name:find('|', 1, true), 'bad names replaced, long names capped, pipes removed')
+check(ns.DB.Profile().rememberWheel == false, 'bad remember flag reset')
+check(btn.__attrs.wheels == 5 and btn.__attrs.lastwheel == nil, 'stale repeat target forgotten')
 
 return fails
 """ + " end")

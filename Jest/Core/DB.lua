@@ -77,6 +77,27 @@ local function validNumber(v, limits)
 	return type(v) == "number" and v == v and v >= limits[1] and v <= limits[2] -- v == v rejects NaN
 end
 
+-- Trimmed and length-capped wheel name, or nil if nothing is left.
+function DB.CleanWheelName(text)
+	if type(text) ~= "string" then return nil end
+	text = text:gsub("[\r\n|]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if text == "" then return nil end
+	return text:sub(1, ns.WHEEL_NAME_MAX)
+end
+
+local function cleanWheel(wheel, position)
+	if type(wheel) ~= "table" or type(wheel.slices) ~= "table" then return nil end
+	local slices = {}
+	for _, s in ipairs(wheel.slices) do
+		local clean = cleanSlice(s)
+		if clean and #slices < ns.MAX_SLICES then
+			slices[#slices + 1] = clean
+		end
+	end
+	if #slices == 0 then return nil end
+	return { name = DB.CleanWheelName(wheel.name) or ("Wheel " .. position), slices = slices }
+end
+
 -- Returns a clean copy of `p`, or nil if nothing usable is left.
 local function cleanProfile(p)
 	if type(p) ~= "table" then return nil end
@@ -85,27 +106,27 @@ local function cleanProfile(p)
 	for key, limits in pairs(ns.Limits) do
 		out[key] = validNumber(p[key], limits) and p[key] or defaults[key]
 	end
-	if type(p.sounds) == "boolean" then
-		out.sounds = p.sounds
-	else
-		out.sounds = defaults.sounds
+	for _, key in ipairs({ "sounds", "rememberWheel" }) do
+		if type(p[key]) == "boolean" then
+			out[key] = p[key]
+		else
+			out[key] = defaults[key]
+		end
 	end
 
-	local wheel = type(p.wheels) == "table" and p.wheels[1]
-	local slices = {}
-	if type(wheel) == "table" and type(wheel.slices) == "table" then
-		for _, s in ipairs(wheel.slices) do
-			local clean = cleanSlice(s)
-			if clean and #slices < ns.MAX_SLICES then
-				slices[#slices + 1] = clean
+	-- Wheels left with no usable slices are dropped; with no wheels left, start from the defaults.
+	out.wheels = {}
+	if type(p.wheels) == "table" then
+		for _, wheel in ipairs(p.wheels) do
+			local clean = cleanWheel(wheel, #out.wheels + 1)
+			if clean and #out.wheels < ns.MAX_WHEELS then
+				out.wheels[#out.wheels + 1] = clean
 			end
 		end
 	end
-	if #slices == 0 then
-		slices = deepCopy(defaults.wheels[1].slices)
+	if #out.wheels == 0 then
+		out.wheels = deepCopy(defaults.wheels)
 	end
-	local name = type(wheel) == "table" and type(wheel.name) == "string" and wheel.name or defaults.wheels[1].name
-	out.wheels = { { name = name, slices = slices } }
 	return out
 end
 
@@ -136,11 +157,88 @@ function DB.ProfileName()
 	return JestCharDB.profile
 end
 
--- One wheel per profile for now; the data model allows more later.
-function DB.Wheel()
-	return DB.Profile().wheels[1]
+-- A profile has 1..MAX_WHEELS wheels. Scrolling while the wheel is open moves between them.
+function DB.Wheels()
+	return DB.Profile().wheels
+end
+
+-- The wheel the options panel and slash commands are editing. Not saved: each session starts
+-- on the first wheel.
+local editIndex = 1
+
+function DB.EditIndex()
+	editIndex = math.max(1, math.min(editIndex, #DB.Wheels()))
+	return editIndex
+end
+
+function DB.SetEditIndex(i)
+	editIndex = i
+	return DB.EditIndex()
+end
+
+-- Wheel i, or the wheel being edited.
+function DB.Wheel(i)
+	return DB.Wheels()[i or DB.EditIndex()]
+end
+
+function DB.NewWheel(position)
+	local slices = {}
+	for i = 1, ns.NEW_WHEEL_SLICES do
+		slices[i] = { kind = "emote", value = "" }
+	end
+	return { name = "Wheel " .. position, slices = slices }
+end
+
+-- Appends a new wheel. Returns its index, or nil and a message when there's no room.
+function DB.AddWheel(name)
+	local wheels = DB.Wheels()
+	if #wheels >= ns.MAX_WHEELS then
+		return nil, ("You can have at most %d wheels."):format(ns.MAX_WHEELS)
+	end
+	local wheel = DB.NewWheel(#wheels + 1)
+	wheel.name = DB.CleanWheelName(name) or wheel.name
+	wheels[#wheels + 1] = wheel
+	return #wheels
+end
+
+-- Removes wheel i and returns it, or nil and a message when it's the only one.
+function DB.RemoveWheel(i)
+	local wheels = DB.Wheels()
+	if #wheels <= 1 then
+		return nil, "You need at least one wheel."
+	end
+	local editing = wheels[DB.EditIndex()]
+	local removed = table.remove(wheels, i)
+	DB.SetEditIndex(DB.IndexOfWheel(editing) or i)
+	return removed
+end
+
+-- Puts a removed wheel back at position i (undo). Returns its index, or nil when full.
+function DB.InsertWheel(i, wheel)
+	local wheels = DB.Wheels()
+	if #wheels >= ns.MAX_WHEELS then return nil end
+	i = math.max(1, math.min(i, #wheels + 1))
+	table.insert(wheels, i, wheel)
+	return i
+end
+
+-- Moves wheel `from` to position `to`. The edited wheel stays selected wherever it ends up.
+function DB.MoveWheel(from, to)
+	local wheels = DB.Wheels()
+	if from == to or not wheels[from] or to < 1 or to > #wheels then return false end
+	local editing = wheels[DB.EditIndex()]
+	table.insert(wheels, to, table.remove(wheels, from))
+	DB.SetEditIndex(DB.IndexOfWheel(editing) or to)
+	return true
+end
+
+function DB.IndexOfWheel(wheel)
+	for i, w in ipairs(DB.Wheels()) do
+		if w == wheel then return i end
+	end
 end
 
 function DB.ResetProfile()
 	JestDB.profiles[JestCharDB.profile] = deepCopy(ns.Defaults.profile)
+	editIndex = 1
 end

@@ -26,6 +26,8 @@ Two invariants to keep:
 
 - `Geometry.SliceAt` (UI/Geometry.lua) and the maths in `Secure/Snippets.lua` must stay identical. With `/jest debug` on, every fire reports whether they agreed.
 - Nothing may change secure attributes or bindings during combat. `SecureWheel.Apply` defers itself until combat ends.
+- Slice `K` of wheel `W` is the secure button name `wWsK` (`Snippets.SliceButton`), so its attributes are `type-wWsK` and so on. The snippet builds the same names. The in-game wheel draws from `SecureWheel.Applied()`, a copy of what was last applied, so it always matches what will fire.
+- Don't change key bindings while the wheel is open; only on open and close. Rebinding while the open key is held loses its release. That's why the mouse wheel clicks a separate `JestPagerButton` to switch wheels.
 
 ## Tests
 
