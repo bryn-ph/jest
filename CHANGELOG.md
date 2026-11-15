@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.4.0-beta
 
 - The icon picker has a search box: type part of a name ("dance", "heart", "beer") and the grid narrows as you type. Words can be combined, and a file ID or texture path still works.
 - Category chips (Abilities, Achievements, Items, All) cut the list down; it opens on Abilities, or on the current icon's category. Hover an icon to see its name.
