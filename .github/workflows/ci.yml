@@ -28,10 +28,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # When a release tag is pushed right after its commit, this run can already see the tag.
+      # The packager then refuses a dry run ("Found future tag ..., not packaging") and there's
+      # no zip to upload. The Release workflow builds that commit, so skip it here.
+      - name: Check for a release tag on this commit
+        id: tag
+        run: |
+          if tag=$(git describe --exact-match --tags HEAD 2>/dev/null); then
+            echo "::notice::$tag is on this commit; the Release workflow packages it."
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: BigWigsMods/packager@v2
+        if: steps.tag.outputs.tagged != 'true'
         with:
           args: -d
       - uses: actions/upload-artifact@v4
+        if: steps.tag.outputs.tagged != 'true'
         with:
           name: jest-package
           path: .release/*.zip
