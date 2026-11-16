@@ -7,6 +7,7 @@
 --   view:Layout(slices, { radius =, deadZone =, iconSize =, centreIconSize = })
 --   view:SetHighlight(i)  -- gold segment eases to slice i (nil fades it out)
 --   view:SetEmphasis(i)   -- slice i's icon grows (nil = none)
+--   view:SetSlotPosition(i, p)  -- slide slice i's icon round the ring to position p (nil = home)
 --   view:SetCentre(texture, text, dim)  -- centre icon, plus the name in the pill under the ring
 --   view:Update(elapsed)  -- call every frame while shown, drives the easing
 local addonName, ns = ...
@@ -25,6 +26,7 @@ local GLOW_SCALE = 0.84        -- glow segment is drawn this much smaller in its
 local HIGHLIGHT_TURN = 22      -- higher = faster highlight sweep between slices
 local HIGHLIGHT_FADE = 16      -- higher = faster highlight fade in/out
 local SCALE_SPEED = 18         -- higher = snappier icon grow/shrink
+local SLIDE_SPEED = 16         -- higher = snappier icons sliding round the ring (drag to reorder)
 local EMPHASIS_SCALE = 1.2
 local WEDGE_COLOR = { 0.05, 0.05, 0.07, 0.62 }
 local WEDGE_EMPTY_ALPHA = 0.32
@@ -193,6 +195,7 @@ function ViewMixin:GetSlot(i)
 	s.count:SetPoint("BOTTOMRIGHT", 3, -3)
 
 	s.scale, s.target, s.x, s.y = 1, 1, 0, 0
+	s.angle, s.targetAngle = 0, 0 -- where on the ring the icon is, and is heading (degrees)
 	self.slots[i] = s
 	if self.opts.onSlotCreated then self.opts.onSlotCreated(s, i) end
 	return s
@@ -259,6 +262,8 @@ function ViewMixin:Layout(slices, o)
 		s.glow:SetSize(o.iconSize * 1.55, o.iconSize * 1.55)
 		s.ring:SetSize(o.iconSize + 2, o.iconSize + 2)
 		s.x, s.y = ns.Geometry.SlicePosition(i, n, o.radius)
+		s.angle = ns.Geometry.SliceAngle(i, n) -- layouts snap; only SetSlotPosition slides
+		s.targetAngle = s.angle
 		s.target = 1 -- current scale is kept so re-layouts don't pop
 		s:ClearAllPoints()
 		placeSlot(self, s)
@@ -353,6 +358,15 @@ function ViewMixin:Flash(i)
 	self:SetHighlightAlpha(1)
 end
 
+-- Slide slice i's icon round the ring to where slice `position` sits (nil = back to its own
+-- place). Used to preview a reorder while dragging; Update does the easing.
+function ViewMixin:SetSlotPosition(i, position)
+	local s = self.slots[i]
+	if s then
+		s.targetAngle = ns.Geometry.SliceAngle(position or i, self.n)
+	end
+end
+
 function ViewMixin:SetCentre(texture, text, dim)
 	if texture then
 		self.centreIcon:SetTexture(texture)
@@ -367,10 +381,19 @@ function ViewMixin:Update(elapsed)
 	local k = math.min(1, elapsed * SCALE_SPEED)
 	for i = 1, self.n do
 		local s = self.slots[i]
+		local moved = false
 		if math.abs(s.target - s.scale) > 0.002 then
 			s.scale = s.scale + (s.target - s.scale) * k
-			placeSlot(self, s)
+			moved = true
 		end
+		local slide = ns.Geometry.AngleDelta(s.angle, s.targetAngle)
+		if math.abs(slide) > 0.05 then
+			s.angle = s.angle + slide * math.min(1, elapsed * SLIDE_SPEED)
+			local a = math.rad(s.angle)
+			s.x, s.y = self.radius * math.sin(a), self.radius * math.cos(a)
+			moved = true
+		end
+		if moved then placeSlot(self, s) end
 	end
 
 	if self.hasArt then

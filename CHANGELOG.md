@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Dragging a slice to a new place in the editor now moves it there and shifts the slices in between along, keeping their order, instead of swapping two slices. While you drag, the other icons slide round the ring to show where everything will end up, and the target is highlighted ("Move to slot 5"). Moves can be undone.
+
 ## v0.4.0-beta
 
 - The icon picker has a search box: type part of a name ("dance", "heart", "beer") and the grid narrows as you type. Words can be combined, and a file ID or texture path still works.

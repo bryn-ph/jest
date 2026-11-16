@@ -374,12 +374,12 @@ check(pv.slots[9].__alpha == 0.35, 'dragged slot dimmed')
 __cx, __cy = 300 - 87, 300 + 15
 pv.frame.__scripts.OnUpdate(pv.frame, 0.016)
 check(pv.highlighted == 8, 'drop target highlighted, got ' .. tostring(pv.highlighted))
-check(pv.captionText:GetText() == 'Swap here', 'centre explains the drop')
+check(pv.captionText:GetText() == 'Move to slot 8', 'centre explains the drop, got ' .. pv.captionText:GetText())
 pv.slots[9].__scripts.OnDragStop(pv.slots[9])
 check(not ui.ghost.__shown, 'ghost hidden after drop')
-check(ns.DB.Wheel().slices[9] == slice8 and ns.DB.Wheel().slices[8].value == '', 'slices 8 and 9 swapped')
+check(ns.DB.Wheel().slices[9] == slice8 and ns.DB.Wheel().slices[8].value == '', 'slice 9 moved to 8 (neighbours: same as a swap)')
 check(ui.editorTitle:GetText() == 'Slice 8', 'selection follows the dragged slice')
-check(ui.status:GetText() == 'Swapped slices 9 and 8.', 'swap status, got ' .. ui.status:GetText())
+check(ui.status:GetText() == 'Moved slice 9 to 8.', 'move status, got ' .. ui.status:GetText())
 -- the click that can follow a drag is ignored
 pv.slots[3].__scripts.OnClick(pv.slots[3])
 check(ui.editorTitle:GetText() == 'Slice 8', 'click right after drag ignored')
@@ -393,6 +393,42 @@ check(pv.captionText:GetText() == 'Cancel', 'centre says cancel over the dead zo
 pv.slots[2].__scripts.OnDragStop(pv.slots[2])
 check(ns.DB.Wheel().slices[2] == before, 'drop in centre changes nothing')
 check(pv.highlighted == 8, 'highlight returns to the selection')
+
+-- dragging further squeezes in: the slices between shift along, keeping their order
+local M = ns.Panel._movedIndex
+check(M(2, 2, 5) == 5 and M(3, 2, 5) == 2 and M(5, 2, 5) == 4 and M(6, 2, 5) == 6 and M(1, 2, 5) == 1, 'moving 2 to 5 shifts 3-5 back one')
+check(M(5, 5, 2) == 2 and M(2, 5, 2) == 3 and M(4, 5, 2) == 5 and M(6, 5, 2) == 6, 'moving 5 to 2 shifts 2-4 forward one')
+local order = {}
+for i, s in ipairs(ns.DB.Wheel().slices) do order[i] = s end
+__t = 51.3
+pv.slots[2].__scripts.OnDragStart(pv.slots[2])
+local angle5 = ns.Geometry.SliceAngle(5, 9)
+__cx, __cy = 300 + 88 * math.sin(math.rad(angle5)), 300 + 88 * math.cos(math.rad(angle5))
+pv.frame.__scripts.OnUpdate(pv.frame, 0.016)
+check(pv.highlighted == 5 and pv.captionText:GetText() == 'Move to slot 5', 'aiming at slot 5 highlights it')
+check(pv.slots[3].targetAngle == ns.Geometry.SliceAngle(2, 9) and pv.slots[5].targetAngle == ns.Geometry.SliceAngle(4, 9), 'slices 3-5 slide back to make room')
+check(pv.slots[2].targetAngle == angle5 and pv.slots[6].targetAngle == ns.Geometry.SliceAngle(6, 9), 'the dragged slice takes the gap; the rest stay')
+for _ = 1, 40 do pv.frame.__scripts.OnUpdate(pv.frame, 0.016) end
+check(math.abs(pv.slots[3].angle - ns.Geometry.SliceAngle(2, 9)) < 0.5, 'icons slide round the ring into place')
+pv.slots[2].__scripts.OnDragStop(pv.slots[2])
+local now = ns.DB.Wheel().slices
+check(now[5] == order[2] and now[2] == order[3] and now[3] == order[4] and now[4] == order[5] and now[1] == order[1] and now[6] == order[6], 'drop inserts and keeps the order')
+check(ui.status:GetText() == 'Moved slice 2 to 5.' and ui.undo.__shown and ui.editorTitle:GetText() == 'Slice 5', 'move reported, selected, with undo')
+check(pv.slots[3].angle == ns.Geometry.SliceAngle(3, 9), 'after the drop the icons sit at their own places')
+ui.undo:Click()
+now = ns.DB.Wheel().slices
+local same = true
+for i, s in ipairs(order) do if now[i] ~= s then same = false end end
+check(same and ui.editorTitle:GetText() == 'Slice 2', 'undo puts the order back')
+-- cancelling slides everything home
+__t = 51.6
+pv.slots[2].__scripts.OnDragStart(pv.slots[2])
+pv.frame.__scripts.OnUpdate(pv.frame, 0.016)
+__cx, __cy = 300, 300
+pv.slots[2].__scripts.OnDragStop(pv.slots[2])
+check(pv.slots[3].targetAngle == ns.Geometry.SliceAngle(3, 9), 'cancel slides the icons back')
+
+ns.Panel.Select(8)
 -- clicking a slice selects it
 __t = 52
 pv.slots[3].__scripts.OnClick(pv.slots[3])
