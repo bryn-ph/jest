@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.4.1-beta
 
 - Dragging a slice to a new place in the editor now moves it there and shifts the slices in between along, keeping their order, instead of swapping two slices. While you drag, the other icons slide round the ring to show where everything will end up, and the target is highlighted ("Move to slot 5"). Moves can be undone.
 
