@@ -580,9 +580,9 @@ local function dropFromCursor(index)
 end
 
 ---------------------------------------------------------------------------
--- Preview wheel: click a slice to edit it, drag it onto another slice to swap them
+-- Preview wheel: click a slice to edit it, drag it to another place to move it there
 ---------------------------------------------------------------------------
-local drag          -- { from = i, target = j } while a slice is being dragged
+local drag          -- { from = i, target = j } while a slice is being dragged (j = where it would go)
 local lastDragEnd = 0
 
 local function showSelectedInCentre()
@@ -614,7 +614,7 @@ local function slotTooltip(slot)
 	if key ~= "" then
 		GameTooltip:AddLine("Press " .. key .. " while the wheel is open to fire it.", 0.5, 0.5, 0.5, true)
 	end
-	GameTooltip:AddLine("Click to edit. Drag onto another slice to swap, or drop an item or spell here to replace it.", 0.5, 0.5, 0.5, true)
+	GameTooltip:AddLine("Click to edit. Drag to another place to move it there (the rest keep their order), or drop an item or spell here to replace it.", 0.5, 0.5, 0.5, true)
 	GameTooltip:Show()
 end
 
@@ -636,17 +636,45 @@ local function dropTarget()
 	return ns.Geometry.SliceAt(dx, dy, ui.preview.n, PREVIEW.deadZone)
 end
 
+local function clickSlice(i)
+	-- Clicking while holding something (picked up from bags etc.) drops it here.
+	if GetCursorInfo and GetCursorInfo() then
+		dropFromCursor(i)
+		return
+	end
+	if GetTime() - lastDragEnd < CLICK_AFTER_DRAG then return end
+	Panel.Select(i)
+end
+
+-- Where slice k ends up when the dragged slice moves from `from` to `to`: the slices in between
+-- close the gap it leaves and open one where it lands, so the order is kept.
+local function movedIndex(k, from, to)
+	if k == from then return to end
+	if from < to and k > from and k <= to then return k - 1 end
+	if from > to and k >= to and k < from then return k + 1 end
+	return k
+end
+Panel._movedIndex = movedIndex -- internal; used by the tests
+
+-- Slide the icons round the ring to show the order a drop at `to` would give (nil = as it is).
+-- The dragged slice's own faded icon moves into the gap.
+local function previewMove(to)
+	for k = 1, ui.preview.n do
+		ui.preview:SetSlotPosition(k, to and movedIndex(k, drag.from, to) or nil)
+	end
+end
+
 local function updateDrag()
 	local target = dropTarget()
 	if target == drag.from then target = nil end
 	if target ~= drag.target or drag.first then
 		drag.first = nil
 		drag.target = target
+		previewMove(target)
 		ui.preview:SetHighlight(target)
-		ui.preview:SetEmphasis(target)
+		ui.preview:SetEmphasis(nil)
 		if target then
-			local t = ui.preview.slots[target]
-			ui.preview:SetCentre(t.iconTexture, "Swap here")
+			ui.preview:SetCentre(ui.preview.slots[drag.from].iconTexture, ("Move to slot %d"):format(target))
 		else
 			ui.preview:SetCentre(nil, "Cancel", true)
 		end
@@ -694,20 +722,37 @@ local function endDrag(cancel)
 	if not drag then return end
 	local from = drag.from
 	local target = not cancel and dropTarget() or nil
+	if target == from then target = nil end
+	if not target then previewMove(nil) end -- slide everything back home
 	drag = nil
 	lastDragEnd = GetTime()
 	ui.ghost:Hide()
 	local s = ui.preview.slots[from]
 	if s then s:SetAlpha(1) end
-	if target and target ~= from then
-		local list = slices()
-		list[from], list[target] = list[target], list[from]
-		selected = target
-		ns.Changed() -- refreshes the panel and the in-game wheel
-		setStatus(("Swapped slices %d and %d."):format(from, target))
-	else
-		Panel.Refresh() -- put the highlight back on the selection
+	if not target then
+		ui.preview:SetEmphasis(selected)
+		ui.preview:SetHighlight(selected)
+		if holding then setHolding(true) else showSelectedInCentre() end
+		return
 	end
+
+	-- Insert, keeping the order of the rest. The preview already shows this order, so the
+	-- re-layout that follows doesn't visibly move anything.
+	local wheel = ns.DB.Wheel()
+	local moved = table.remove(wheel.slices, from)
+	table.insert(wheel.slices, target, moved)
+	selected = target
+	ns.Changed() -- refreshes the panel and the in-game wheel
+	setStatus(("Moved slice %d to %d."):format(from, target))
+	offerUndo(function()
+		local w = ns.DB.IndexOfWheel(wheel)
+		if not w or wheel.slices[target] ~= moved then return false end
+		table.insert(wheel.slices, from, table.remove(wheel.slices, target))
+		ns.DB.SetEditIndex(w)
+		selected = from
+		loadDraft()
+		ns.Changed()
+	end)
 end
 
 ---------------------------------------------------------------------------
@@ -1008,15 +1053,7 @@ local function buildPreview()
 		onSlotCreated = function(slot)
 			slot:RegisterForClicks("LeftButtonUp")
 			slot:RegisterForDrag("LeftButton")
-			slot:SetScript("OnClick", function(self)
-				-- Clicking while holding something (picked up from bags etc.) drops it here.
-				if GetCursorInfo and GetCursorInfo() then
-					dropFromCursor(self.index)
-					return
-				end
-				if GetTime() - lastDragEnd < CLICK_AFTER_DRAG then return end
-				Panel.Select(self.index)
-			end)
+			slot:SetScript("OnClick", function(self) clickSlice(self.index) end)
 			slot:SetScript("OnReceiveDrag", function(self) dropFromCursor(self.index) end)
 			slot:SetScript("OnDragStart", startDrag)
 			slot:SetScript("OnDragStop", function() endDrag() end)
@@ -1045,6 +1082,7 @@ local function buildPreview()
 		if GetCursorInfo and GetCursorInfo() then dropFromCursor(nil) end
 	end)
 	ui.centreDrop = centre
+
 
 	-- The icon that follows the cursor while dragging.
 	local ghost = CreateFrame("Frame", nil, UIParent)
