@@ -60,6 +60,9 @@ IsMouselooking = function() return false end
 -- mock character: race 1 (Human), male, unless a test changes __race / __sex
 UnitRace = function() if __race == false then return nil end return 'Human', 'Human', __race or 1 end
 UnitSex = function() return __sex or 2 end
+-- mock character name; tests switch characters by changing __name
+UnitName = function() return __name or 'Tester' end
+GetRealmName = function() return 'Realm' end
 -- cursor and the things that can be dragged onto the wheel
 GetCursorInfo = function() if __cursor then return unpack(__cursor) end end
 ClearCursor = function() __cursor = nil end
@@ -86,6 +89,7 @@ GetMacroInfo = function(i) if i == 121 then return 'Party', 136243, '/cheer\n/da
 GetMacroIcons = function(t) for _, id in ipairs({ 132089, 236279, 236688, 236555 }) do t[#t + 1] = id end end
 GetMacroItemIcons = function(t) for _, id in ipairs({ 133886, 134062, 99999999 }) do t[#t + 1] = id end end
 PlaySound = function() end
+Minimap = newObj('Minimap'); Minimap.GetWidth = function() return 140 end
 SOUNDKIT = { U_CHAT_SCROLL_BUTTON = 1, IG_MAINMENU_OPTION_CHECKBOX_ON = 2, IG_MAINMENU_OPTION_CHECKBOX_OFF = 3 }
 ClearOverrideBindings = function() end
 SecureHandlerSetFrameRef = function() end
@@ -142,7 +146,7 @@ local fails = {}
 local function check(cond, msg) if not cond then fails[#fails+1] = msg end end
 
 -- ADDON_LOADED
-for _, fn in ipairs({ ns.DB.Init, ns.Panel.Register, ns.SecureWheel.Apply }) do fn() end
+for _, fn in ipairs({ ns.DB.Init, ns.Panel.Register, ns.MinimapButton.Init, ns.SecureWheel.Apply }) do fn() end
 local btn = JestWheelButton
 check(btn.__attrs.slices1 == 8, 'count attr = 8')
 check(btn.__attrs['type-w1s1'] == 'jest', 'slice1 uses custom type')
@@ -966,6 +970,141 @@ check(#ws == 5 and ws[5].slices[1].value == 'LAUGH', 'broken wheels dropped, the
 check(ws[2].name == 'Wheel 2' and #ws[3].name == 24 and not ws[3].name:find('|', 1, true), 'bad names replaced, long names capped, pipes removed')
 check(ns.DB.Profile().rememberWheel == false, 'bad remember flag reset')
 check(btn.__attrs.wheels == 5 and btn.__attrs.lastwheel == nil, 'stale repeat target forgotten')
+
+-- ===== profiles =====
+-- a character from before profiles keeps the shared Default it was using
+JestDB = { version = 2, profiles = { Default = { wheels = { { name = 'Mine', slices = { { kind = 'emote', value = 'WAVE' } } } } } } }
+JestCharDB = { profile = 'Default' }
+__name = 'Main'
+ns.DB.Init(); ns.Changed()
+check(ns.DB.ProfileName() == 'Default' and JestDB.chars['Main - Realm'] == 'Default', 'an existing character keeps Default')
+-- a new character starts fresh, on a profile of its own
+__name = 'Alt'; JestCharDB = nil
+ns.DB.Init(); ns.Changed()
+check(ns.DB.ProfileName() == 'Alt - Realm' and ns.DB.Wheel(1).name == 'Emotes' and #ns.DB.Wheel(1).slices == 8, 'a new character gets a fresh profile named after it')
+check(JestDB.profiles.Default.wheels[1].name == 'Mine', 'the other profile is untouched')
+-- the account-wide list finds a character's profile even without its per-character file
+__name = 'Main'; JestCharDB = {}
+ns.DB.Init(); ns.Changed()
+check(ns.DB.ProfileName() == 'Default' and btn.__attrs.slices1 == 1, 'characters are matched to their profile account-wide')
+
+-- the editor's profile dropdown
+local rows = function() return JestContextMenu.rows end
+-- open a menu fresh (its buttons toggle, and a test may have left one open)
+local function openProfiles() ns.Widgets.CloseMenu(); ui.profile:Click() end
+local function openOptions() ns.Widgets.CloseMenu(); ui.profileOptions:Click() end
+local function rowNamed(text)
+	for _, r in ipairs(rows()) do if r.__shown ~= false and r.text:GetText() == text then return r end end
+end
+ns.Panel.Refresh()
+check(ui.profile.text:GetText() == 'Default', 'the header shows this character\'s profile')
+openProfiles()
+check(rows()[1].text:GetText() == 'Alt - Realm' and rows()[2].text:GetText() == 'Default', 'profiles listed alphabetically')
+rowNamed('Alt - Realm'):Click()
+check(ns.DB.ProfileName() == 'Alt - Realm' and JestDB.chars['Main - Realm'] == 'Alt - Realm' and btn.__attrs.slices1 == 8, 'picking a profile switches to it and applies its wheels')
+check(ui.profile.text:GetText() == 'Alt - Realm' and ui.status:GetText():find('Alt - Realm', 1, true), 'and says so')
+
+openProfiles()
+check(rowNamed('+ New profile...') and not rowNamed('Rename...') and not rowNamed('Copy from...'), 'the dropdown lists profiles, not options')
+rowNamed('+ New profile...'):Click()
+check(JestPrompt.__shown, 'New profile asks for a name')
+JestPrompt.box:SetText('default'); JestPrompt.okButton:Click()
+check(JestPrompt.__shown and JestPrompt.error:GetText():find('already', 1, true), 'names must be unique, ignoring case')
+JestPrompt.box:SetText('  Raid  '); JestPrompt.okButton:Click()
+check(not JestPrompt.__shown and ns.DB.ProfileName() == 'Raid' and #ns.DB.Wheel(1).slices == 8, 'a new profile starts with the default wheel')
+
+openOptions(); rowNamed('Copy from...'):Click()
+check(rows()[1].text:GetText() == 'Copy into "Raid":' and not rowNamed('Raid'), 'copy lists the other profiles')
+rowNamed('Default'):Click()
+check(ns.DB.ProfileName() == 'Raid' and ns.DB.Wheel(1).name == 'Mine', 'copy brings in the other profile\'s wheels')
+check(JestDB.profiles.Default ~= ns.DB.Profile(), 'as a copy, not shared')
+ui.undo:Click()
+check(ns.DB.Wheel(1).name == 'Emotes', 'undo puts the profile back')
+
+JestDB.chars['Other - Realm'] = 'Raid'
+openOptions(); rowNamed('Rename...'):Click()
+JestPrompt.box:SetText('Raids'); JestPrompt.okButton:Click()
+check(ns.DB.ProfileName() == 'Raids' and JestDB.profiles.Raid == nil, 'rename')
+check(JestDB.chars['Main - Realm'] == 'Raids' and JestDB.chars['Other - Realm'] == 'Raids', 'every character using it follows the rename')
+
+ns.DB.Wheel(1).name = 'Changed'
+openOptions(); rowNamed('Reset to default wheel'):Click()
+check(ns.DB.Wheel(1).name == 'Emotes', 'reset')
+ui.undo:Click()
+check(ns.DB.Wheel(1).name == 'Changed', 'reset can be undone')
+
+openProfiles()
+check(rowNamed('Raids').remove.__shown and rowNamed('Alt - Realm').remove.__shown, 'every profile has a delete x')
+rowNamed('Alt - Realm').remove:Click()
+check(JestDB.profiles['Alt - Realm'] == nil and JestDB.chars['Alt - Realm'] == nil, 'x deletes the profile and frees its character')
+check(JestContextMenu.__shown and not rowNamed('Alt - Realm'), 'the list stays open, without it')
+ui.undo:Click()
+check(JestDB.profiles['Alt - Realm'] and JestDB.chars['Alt - Realm'] == 'Alt - Realm', 'undo brings it back')
+-- deleting the profile in use moves this character to its own profile ("Main - Realm" doesn't
+-- exist here, so the first remaining one), and undo moves it back
+local raids = ns.DB.Profile()
+openProfiles()
+rowNamed('Raids').remove:Click()
+check(JestDB.profiles.Raids == nil and ns.DB.ProfileName() == 'Alt - Realm' and ui.profile.text:GetText() == 'Alt - Realm', 'deleting the profile in use switches to another')
+check(ui.status:GetText():find('now uses', 1, true), 'and says where it went')
+ui.undo:Click()
+check(ns.DB.ProfileName() == 'Raids' and ns.DB.Profile() == raids, 'undo restores it and switches back')
+JestDB.profiles.Lonely = nil
+for _, name in ipairs(ns.DB.ProfileNames()) do if name ~= 'Raids' then JestDB.profiles[name] = nil end end
+openProfiles()
+check(not rowNamed('Raids').remove.__shown, 'no x on the last profile')
+check(not ns.DB.DeleteProfile('Raids'), 'the last profile cannot be deleted')
+JestDB.profiles['Alt - Realm'] = ns.DB.Copy(ns.Defaults.profile)
+JestDB.profiles.Default = { wheels = { { name = 'Mine', slices = { { kind = 'emote', value = 'WAVE' } } } } }
+ns.DB.Init(); ns.Changed()
+
+-- slash commands
+SlashCmdList.JEST('profile')
+SlashCmdList.JEST('profile default')
+check(ns.DB.ProfileName() == 'Default', '/jest profile <name> switches, ignoring case')
+SlashCmdList.JEST('profile new PvP')
+check(ns.DB.ProfileName() == 'PvP' and ns.DB.Wheel(1).name == 'Emotes', '/jest profile new')
+SlashCmdList.JEST('profile copy Default')
+check(ns.DB.Wheel(1).name == 'Mine', '/jest profile copy')
+SlashCmdList.JEST('profile rename Arena')
+check(ns.DB.ProfileName() == 'Arena', '/jest profile rename')
+SlashCmdList.JEST('profile delete Raids')
+check(JestDB.profiles.Raids, '/jest profile delete asks for confirmation')
+SlashCmdList.JEST('profile delete Raids yes')
+check(JestDB.profiles.Raids == nil, '/jest profile delete ... yes')
+SlashCmdList.JEST('profile nope')
+check(ns.DB.ProfileName() == 'Arena', 'an unknown profile name changes nothing')
+
+-- saved character list is cleaned on load
+JestDB.chars[1] = 'x'; JestDB.chars['Gone - Realm'] = 'Missing'
+ns.DB.Init()
+check(JestDB.chars[1] == nil and JestDB.chars['Gone - Realm'] == nil, 'bad or stale character entries dropped')
+__name = nil
+
+-- ===== minimap button =====
+local mb = ns.MinimapButton._button()
+check(mb and mb.__shown ~= false and JestDB.minimap.angle == 225, 'minimap button shown by default, bottom left')
+JestEditor:Hide()
+mb.__scripts.OnClick(mb)
+check(JestEditor.__shown, 'clicking it opens the editor')
+mb.__scripts.OnClick(mb)
+check(not JestEditor.__shown, 'and again closes it')
+mb.__scripts.OnEnter(mb)
+__cx, __cy = 400, 300 -- straight right of the minimap's centre (300, 300)
+mb.__scripts.OnDragStart(mb)
+mb.__scripts.OnUpdate(mb, 0.016)
+mb.__scripts.OnDragStop(mb)
+check(math.abs(JestDB.minimap.angle) < 0.01 and mb.__scripts.OnUpdate == nil, 'dragging moves it round the edge and saves the angle')
+SlashCmdList.JEST('minimap')
+check(not mb.__shown and JestDB.minimap.hide == true, '/jest minimap toggles it off')
+SlashCmdList.JEST('minimap on')
+check(mb.__shown and JestDB.minimap.hide == false, '/jest minimap on')
+__settings.JEST_MINIMAP_BUTTON.set(false)
+check(not mb.__shown and __settings.JEST_MINIMAP_BUTTON.get() == false, 'the Appearance checkbox hides it')
+__settings.JEST_MINIMAP_BUTTON.set(true)
+JestDB.minimap = { angle = 'x', hide = 3 }
+ns.DB.Init()
+check(JestDB.minimap.angle == 225 and JestDB.minimap.hide == false, 'bad saved minimap settings reset')
 
 return fails
 """ + " end")

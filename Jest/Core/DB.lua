@@ -130,6 +130,170 @@ local function cleanProfile(p)
 	return out
 end
 
+---------------------------------------------------------------------------
+-- Profiles: named sets of wheels and appearance settings, shared across the account. Each
+-- character uses one.
+---------------------------------------------------------------------------
+DB.DEFAULT_PROFILE = "Default"
+
+local editIndex = 1 -- see DB.EditIndex below
+
+-- "Name - Realm" for this character, or nil when the game can't say yet.
+function DB.CharacterKey()
+	local name = UnitName and UnitName("player")
+	if type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT or name == "Unknown" then
+		return nil
+	end
+	local realm = GetRealmName and GetRealmName()
+	if type(realm) == "string" and realm ~= "" then
+		return name .. " - " .. realm
+	end
+	return name
+end
+
+-- Make `name` this character's profile.
+local function setCurrent(name)
+	JestCharDB.profile = name
+	local key = DB.CharacterKey()
+	if key then JestDB.chars[key] = name end
+	editIndex = 1
+end
+
+-- Trimmed, length-capped profile name without chat markup, or nil if nothing is left.
+function DB.CleanProfileName(text)
+	if type(text) ~= "string" then return nil end
+	text = text:gsub("[\r\n|]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if text == "" then return nil end
+	return text:sub(1, ns.PROFILE_NAME_MAX)
+end
+
+-- The existing profile called `name`, ignoring case (so "default" finds "Default").
+function DB.FindProfile(name)
+	if type(name) ~= "string" then return nil end
+	if JestDB.profiles[name] then return name end
+	local lower = name:lower()
+	for existing in pairs(JestDB.profiles) do
+		if existing:lower() == lower then return existing end
+	end
+end
+
+-- Checks a name for a new or renamed profile. Returns the clean name, or nil and a message.
+local function checkNewName(text, except)
+	local name = DB.CleanProfileName(text)
+	if not name then return nil, "Type a name for the profile." end
+	local taken = DB.FindProfile(name)
+	if taken and taken ~= except then
+		return nil, ("There's already a profile called \"%s\"."):format(taken)
+	end
+	return name
+end
+
+-- Profile names, sorted alphabetically.
+function DB.ProfileNames()
+	local names = {}
+	for name in pairs(JestDB.profiles) do names[#names + 1] = name end
+	table.sort(names, function(a, b) return a:lower() < b:lower() end)
+	return names
+end
+
+-- How many characters (that Jest has seen) use profile `name`.
+function DB.ProfileUsers(name)
+	local n = 0
+	for _, used in pairs(JestDB.chars) do
+		if used == name then n = n + 1 end
+	end
+	return n
+end
+
+-- Switch this character to an existing profile.
+function DB.SetProfile(name)
+	local found = DB.FindProfile(name)
+	if not found then return nil, ("There's no profile called \"%s\"."):format(tostring(name)) end
+	setCurrent(found)
+	return found
+end
+
+-- Create a profile with the default wheel and switch to it. Returns its name, or nil and a message.
+function DB.NewProfile(text)
+	local name, err = checkNewName(text)
+	if not name then return nil, err end
+	JestDB.profiles[name] = deepCopy(ns.Defaults.profile)
+	setCurrent(name)
+	return name
+end
+
+-- Replace this character's profile with a copy of profile `from`. Returns the replaced contents
+-- (for undo), or nil and a message.
+function DB.CopyProfile(from)
+	local source = DB.FindProfile(from)
+	if not source then return nil, ("There's no profile called \"%s\"."):format(tostring(from)) end
+	if source == DB.ProfileName() then return nil, "That's the profile you're using." end
+	local previous = JestDB.profiles[DB.ProfileName()]
+	JestDB.profiles[DB.ProfileName()] = deepCopy(JestDB.profiles[source])
+	editIndex = 1
+	return previous
+end
+
+-- Put a profile's earlier contents back (undo of a copy or reset).
+function DB.RestoreProfile(name, contents)
+	if not JestDB.profiles[name] then return false end
+	JestDB.profiles[name] = contents
+	editIndex = 1
+	return true
+end
+
+-- Rename this character's profile; every character using it follows.
+function DB.RenameProfile(text)
+	local old = DB.ProfileName()
+	local name, err = checkNewName(text, old)
+	if not name then return nil, err end
+	if name == old then return name end
+	JestDB.profiles[name], JestDB.profiles[old] = JestDB.profiles[old], nil
+	for key, used in pairs(JestDB.chars) do
+		if used == old then JestDB.chars[key] = name end
+	end
+	JestCharDB.profile = name
+	return name
+end
+
+-- Delete a profile. Other characters that used it get a fresh profile next time they log in.
+-- Deleting this character's own profile moves it to its "Name - Realm" profile if there is
+-- one, otherwise to the first remaining profile (removed.switchedTo). Returns what's needed to
+-- undo it, or nil and a message.
+function DB.DeleteProfile(name)
+	local found = DB.FindProfile(name)
+	if not found then return nil, ("There's no profile called \"%s\"."):format(tostring(name)) end
+	if #DB.ProfileNames() <= 1 then return nil, "You need at least one profile." end
+	local removed = { name = found, contents = JestDB.profiles[found], chars = {} }
+	for key, used in pairs(JestDB.chars) do
+		if used == found then
+			removed.chars[#removed.chars + 1] = key
+			JestDB.chars[key] = nil
+		end
+	end
+	JestDB.profiles[found] = nil
+	if found == DB.ProfileName() then
+		local own = DB.CharacterKey()
+		local nextName = (own and JestDB.profiles[own] and own) or DB.ProfileNames()[1]
+		setCurrent(nextName)
+		removed.switchedTo = nextName
+	end
+	return removed
+end
+
+-- Undo a delete; a character that was moved off the profile moves back to it.
+function DB.UndeleteProfile(removed)
+	if JestDB.profiles[removed.name] then return false end
+	JestDB.profiles[removed.name] = removed.contents
+	for _, key in ipairs(removed.chars) do
+		if not JestDB.chars[key] then JestDB.chars[key] = removed.name end
+	end
+	if removed.switchedTo and DB.ProfileName() == removed.switchedTo then
+		setCurrent(removed.name)
+	end
+	return true
+end
+
 function DB.Init()
 	if type(JestDB) ~= "table" then JestDB = {} end
 	if type(JestCharDB) ~= "table" then JestCharDB = {} end
@@ -146,12 +310,33 @@ function DB.Init()
 	if not (type(last) == "number" and last == math.floor(last) and last >= 1 and last <= ns.MAX_WHEELS) then
 		JestCharDB.lastWheel = nil
 	end
-	if type(JestCharDB.profile) ~= "string" then
-		JestCharDB.profile = "Default"
+
+	-- Minimap button position and visibility.
+	if type(JestDB.minimap) ~= "table" then JestDB.minimap = {} end
+	local minimap = JestDB.minimap
+	if not validNumber(minimap.angle, { 0, 360 }) then minimap.angle = ns.Defaults.minimap.angle end
+	if type(minimap.hide) ~= "boolean" then minimap.hide = ns.Defaults.minimap.hide end
+
+	-- Which character uses which profile, account-wide, so renaming a profile can follow it for
+	-- every character, not just this one.
+	if type(JestDB.chars) ~= "table" then JestDB.chars = {} end
+	for key, name in pairs(JestDB.chars) do
+		if type(key) ~= "string" or type(name) ~= "string" or not JestDB.profiles[name] then
+			JestDB.chars[key] = nil
+		end
 	end
-	if not JestDB.profiles[JestCharDB.profile] then
-		JestDB.profiles[JestCharDB.profile] = deepCopy(ns.Defaults.profile)
+
+	local key = DB.CharacterKey()
+	local name = (key and JestDB.chars[key]) or JestCharDB.profile -- the old per-character pointer
+	if type(name) ~= "string" or not JestDB.profiles[name] then
+		-- A character Jest hasn't seen before starts on a fresh profile of its own, named after it.
+		-- (Characters from before profiles keep the shared "Default" they were already using.)
+		name = key or DB.DEFAULT_PROFILE
+		if not JestDB.profiles[name] then
+			JestDB.profiles[name] = deepCopy(ns.Defaults.profile)
+		end
 	end
+	setCurrent(name)
 end
 
 function DB.Profile()
@@ -167,10 +352,8 @@ function DB.Wheels()
 	return DB.Profile().wheels
 end
 
--- The wheel the options panel and slash commands are editing. Not saved: each session starts
--- on the first wheel.
-local editIndex = 1
-
+-- The wheel the options panel and slash commands are editing (editIndex, declared with the
+-- profile code above). Not saved: each session, and each profile switch, starts on the first wheel.
 function DB.EditIndex()
 	editIndex = math.max(1, math.min(editIndex, #DB.Wheels()))
 	return editIndex
@@ -243,7 +426,10 @@ function DB.IndexOfWheel(wheel)
 	end
 end
 
+-- Back to the default wheel and settings. Returns the replaced contents (for undo).
 function DB.ResetProfile()
+	local previous = JestDB.profiles[JestCharDB.profile]
 	JestDB.profiles[JestCharDB.profile] = deepCopy(ns.Defaults.profile)
 	editIndex = 1
+	return previous
 end

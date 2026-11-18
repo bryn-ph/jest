@@ -6,9 +6,54 @@ root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else pathlib.Path(__file__)
 lua = lua51.LuaRuntime(unpack_returned_tuples=True)
 check = lua.eval("function(src, name) local f, err = loadstring(src, name); return f ~= nil, err end")
 
+VALID_ESCAPES = set("abfnrtv\\\"'\n0123456789")
+
+
+def bad_escapes(src):
+    r"""Backslash escapes in quoted strings that Lua 5.1 silently drops: "Interface\Buttons" loads
+    as "InterfaceButtons", so a texture path written with single backslashes just doesn't show.
+    Yields (line, escape)."""
+    i, line = 0, 1
+    while i < len(src):
+        c = src[i]
+        if c == "\n":
+            line += 1
+        if src.startswith("--", i):  # comment: skip to the end of the line
+            while i < len(src) and src[i] != "\n":
+                i += 1
+            continue
+        if src.startswith("[[", i) or src.startswith("[=", i):  # long string: no escapes
+            level = 0
+            while src[i + 1 + level] == "=":
+                level += 1
+            close = "]" + "=" * level + "]"
+            end = src.find(close, i + 2 + level)
+            end = len(src) if end < 0 else end
+            line += src.count("\n", i, end)
+            i = end + len(close)
+            continue
+        if c in "\"'":
+            j = i + 1
+            while j < len(src) and src[j] != c and src[j] != "\n":
+                if src[j] == "\\":
+                    if j + 1 < len(src) and src[j + 1] not in VALID_ESCAPES:
+                        yield line, "\\" + src[j + 1]
+                    j += 2
+                    continue
+                j += 1
+            i = j + 1
+            continue
+        i += 1
+
+
 ok = True
 for p in sorted(root.rglob("*.lua")):
-    good, err = check(p.read_text(encoding="utf-8"), "@" + str(p.relative_to(root)))
+    src = p.read_text(encoding="utf-8")
+    good, err = check(src, "@" + str(p.relative_to(root)))
+    if good:
+        bad = list(bad_escapes(src))
+        if bad:
+            good, err = False, "; ".join(f"line {n}: {esc} is dropped by Lua (write \\\\ for a backslash)" for n, esc in bad)
     print(("OK   " if good else "FAIL ") + str(p.relative_to(root)) + ("" if good else f"  {err}"))
     ok &= bool(good)
 

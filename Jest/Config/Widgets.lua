@@ -218,17 +218,21 @@ function Widgets.EmoteBadgeLegend()
 	return ("|cff%sAnim|r animation   |cff%sVoice|r your character speaks"):format(hex(Widgets.ANIM_COLOR), hex(Widgets.VOICE_COLOR))
 end
 
--- Small pop-up menu under `anchor`. items = { { text =, onClick = fn, disabled = bool }, ... }.
--- Closes on a pick, on Esc, or on a click anywhere else.
+-- Small pop-up menu under `anchor`. items = { item, ... } where an item is
+--   { text =, onClick = fn, disabled = bool, checked = bool, tooltip = text,
+--     onRemove = fn, removeTooltip = text }  -- onRemove adds an "x" button on the right
+-- or { separator = true }. checked marks the current choice in gold. Closes on a pick, on Esc,
+-- or on a click anywhere else; clicking an "x" leaves it open (the caller re-shows it).
+-- Sized to its longest item.
 local menu
-local MENU_ROW_H, MENU_W = 20, 140
+local MENU_ROW_H, MENU_SEP_H, MENU_MIN_W, MENU_MAX_W, MENU_PAD, MENU_REMOVE_W = 20, 9, 140, 280, 26, 20
 
 local function createMenu()
 	menu = CreateFrame("Frame", "JestContextMenu", UIParent, "BackdropTemplate")
 	menu:SetFrameStrata("FULLSCREEN_DIALOG")
 	menu:SetBackdrop({
-		bgFile = "Interface\Buttons\WHITE8x8",
-		edgeFile = "Interface\Tooltips\UI-Tooltip-Border",
+		bgFile = "Interface\\Buttons\\WHITE8x8",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
 		edgeSize = 12,
 		insets = { left = 3, right = 3, top = 3, bottom = 3 },
 	})
@@ -254,40 +258,95 @@ local function menuRow(i)
 	if row then return row end
 	row = CreateFrame("Button", nil, menu)
 	row:SetHeight(MENU_ROW_H)
-	row:SetPoint("TOPLEFT", 5, -5 - (i - 1) * MENU_ROW_H)
-	row:SetPoint("RIGHT", -5, 0)
 	row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	row.text:SetPoint("LEFT", 8, 0)
 	row.text:SetJustifyH("LEFT")
-	local hover = row:CreateTexture(nil, "HIGHLIGHT")
-	hover:SetAllPoints()
-	hover:SetColorTexture(1, 0.82, 0, 0.18)
+	row.text:SetWordWrap(false)
+	row.hover = row:CreateTexture(nil, "HIGHLIGHT")
+	row.hover:SetAllPoints()
+	row.hover:SetColorTexture(1, 0.82, 0, 0.18)
+	row.line = row:CreateTexture(nil, "ARTWORK")
+	row.line:SetColorTexture(1, 1, 1, 0.12)
+	row.line:SetHeight(1)
+	row.line:SetPoint("LEFT", 6, 0)
+	row.line:SetPoint("RIGHT", -6, 0)
+
+	-- "x" on the right, for rows with onRemove.
+	row.remove = CreateFrame("Button", nil, row)
+	row.remove:SetSize(MENU_REMOVE_W, MENU_ROW_H)
+	row.remove:SetPoint("RIGHT", -2, 0)
+	row.remove.text = row.remove:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	row.remove.text:SetPoint("CENTER")
+	row.remove.text:SetText("\195\151") -- U+00D7 multiplication sign
+	row.remove.text:SetTextColor(0.6, 0.6, 0.6)
+	row.remove:SetScript("OnEnter", function(self)
+		self.text:SetTextColor(1, 0.3, 0.3)
+		if row.removeTooltip then
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:SetText(row.removeTooltip, 1, 1, 1, 1, true)
+			GameTooltip:Show()
+		end
+	end)
+	row.remove:SetScript("OnLeave", function(self)
+		self.text:SetTextColor(0.6, 0.6, 0.6)
+		GameTooltip:Hide()
+	end)
+	row.remove:SetScript("OnClick", function()
+		GameTooltip:Hide()
+		if row.onRemove then row.onRemove() end
+	end)
 	row:SetScript("OnClick", function(self)
 		menu:Hide()
 		if self.onClick then self.onClick() end
 	end)
+	row:SetScript("OnEnter", function(self)
+		if not self.tooltip then return end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText(self.tooltip, 1, 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	row:SetMotionScriptsWhileDisabled(true)
 	menu.rows[i] = row
 	return row
 end
 
 function Widgets.ShowMenu(anchor, items)
 	if not menu then createMenu() end
+	local width, y = MENU_MIN_W, -5
 	for i, item in ipairs(items) do
 		local row = menuRow(i)
-		row.text:SetText(item.text)
+		local height = item.separator and MENU_SEP_H or MENU_ROW_H
+		row:SetHeight(height)
+		row:ClearAllPoints()
+		row:SetPoint("TOPLEFT", 5, y)
+		row:SetPoint("RIGHT", -5, 0)
+		y = y - height
+
+		row.line:SetShown(item.separator == true)
+		row.text:SetText(item.separator and "" or item.text)
 		row.onClick = item.onClick
-		row:SetEnabled(not item.disabled)
+		row.tooltip = item.tooltip
+		row.onRemove, row.removeTooltip = item.onRemove, item.removeTooltip
+		row.remove:SetShown(item.onRemove ~= nil)
+		row.text:SetPoint("RIGHT", item.onRemove and -(MENU_REMOVE_W + 4) or -8, 0)
+		row:SetEnabled(not (item.disabled or item.separator))
 		if item.disabled then
 			row.text:SetTextColor(0.45, 0.45, 0.45)
+		elseif item.checked then
+			row.text:SetTextColor(1, 0.82, 0)
 		else
 			row.text:SetTextColor(1, 1, 1)
 		end
+		local text = row.text
+		local textWidth = (text.GetUnboundedStringWidth and text:GetUnboundedStringWidth()) or text:GetStringWidth() or 0
+		width = math.max(width, textWidth + MENU_PAD + (item.onRemove and MENU_REMOVE_W or 0))
 		row:Show()
 	end
 	for i = #items + 1, #menu.rows do
 		menu.rows[i]:Hide()
 	end
-	menu:SetSize(MENU_W, #items * MENU_ROW_H + 10)
+	menu:SetSize(math.min(MENU_MAX_W, width), -y + 5)
 	menu:ClearAllPoints()
 	menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
 	menu:Show()
@@ -300,4 +359,76 @@ end
 
 function Widgets.MenuIsOpen()
 	return menu ~= nil and menu:IsShown()
+end
+
+-- Small dialog asking for a name. Prompt(title, text, onAccept): onAccept(name) returns nothing
+-- to close, or a message to show while staying open (e.g. "That name is taken").
+local prompt
+
+local function createPrompt()
+	prompt = CreateFrame("Frame", "JestPrompt", UIParent, "BackdropTemplate")
+	prompt:SetSize(300, 128)
+	prompt:SetPoint("CENTER", 0, 120)
+	prompt:SetFrameStrata("FULLSCREEN_DIALOG")
+	prompt:SetToplevel(true)
+	prompt:EnableMouse(true)
+	prompt:SetBackdrop({
+		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+		tile = true, tileSize = 32, edgeSize = 32,
+		insets = { left = 11, right = 12, top = 12, bottom = 11 },
+	})
+	prompt:Hide()
+	table.insert(UISpecialFrames, "JestPrompt") -- Esc closes it
+
+	prompt.title = prompt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	prompt.title:SetPoint("TOP", 0, -18)
+	prompt.box = Widgets.Input(prompt, 256)
+	prompt.box:SetPoint("TOP", 0, -42)
+	prompt.error = prompt:CreateFontString(nil, "OVERLAY", "GameFontRedSmall")
+	prompt.error:SetPoint("TOP", prompt.box, "BOTTOM", 0, -5)
+	prompt.error:SetWidth(256)
+
+	local ok = CreateFrame("Button", nil, prompt, "UIPanelButtonTemplate")
+	ok:SetSize(90, 22)
+	ok:SetPoint("BOTTOMRIGHT", prompt, "BOTTOM", -4, 16)
+	ok:SetText("OK")
+	local cancel = CreateFrame("Button", nil, prompt, "UIPanelButtonTemplate")
+	cancel:SetSize(90, 22)
+	cancel:SetPoint("BOTTOMLEFT", prompt, "BOTTOM", 4, 16)
+	cancel:SetText("Cancel")
+	prompt.okButton = ok
+
+	local function accept()
+		local message = prompt.onAccept and prompt.onAccept(prompt.box:GetText())
+		if message then
+			prompt.error:SetText(message)
+		else
+			prompt:Hide()
+		end
+	end
+	ok:SetScript("OnClick", accept)
+	prompt.box:SetScript("OnEnterPressed", accept)
+	cancel:SetScript("OnClick", function() prompt:Hide() end)
+	prompt.box:SetScript("OnEscapePressed", function() prompt:Hide() end)
+	prompt:SetScript("OnHide", function()
+		prompt.onAccept = nil
+		prompt.box:ClearFocus()
+	end)
+end
+
+function Widgets.Prompt(title, text, onAccept)
+	if not prompt then createPrompt() end
+	prompt.title:SetText(title)
+	prompt.error:SetText("")
+	prompt.onAccept = onAccept
+	prompt.box:SetText(text or "")
+	prompt:Show()
+	prompt:Raise()
+	prompt.box:SetFocus()
+	prompt.box:HighlightText()
+end
+
+function Widgets.ClosePrompt()
+	if prompt then prompt:Hide() end
 end

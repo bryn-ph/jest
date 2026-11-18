@@ -104,6 +104,7 @@ ns.On("ADDON_LOADED", function(_, name)
 	ns.Off("ADDON_LOADED")
 	ns.DB.Init()
 	ns.Panel.Register()
+	ns.MinimapButton.Init()
 	ns.SecureWheel.Apply()
 end)
 

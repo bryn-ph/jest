@@ -255,6 +255,17 @@ add("sound", "sound on||off", function(rest)
 	Print("Sounds " .. (profile.sounds and "on" or "off") .. ".")
 end)
 
+add("minimap", "minimap [on||off] - show or hide the minimap button (toggles with no argument)", function(rest)
+	local show
+	if rest == "on" or rest == "off" then
+		show = rest == "on"
+	else
+		show = not ns.MinimapButton.IsShown()
+	end
+	ns.MinimapButton.SetShown(show)
+	Print("Minimap button " .. (show and "shown" or "hidden") .. ".")
+end)
+
 add("reset", "reset yes - restore the default wheel for this profile", function(rest)
 	if rest ~= "yes" then
 		Print("This replaces every wheel, slice and setting in this profile. Type |cffffff00/jest reset yes|r to confirm.")
@@ -262,6 +273,55 @@ add("reset", "reset yes - restore the default wheel for this profile", function(
 	end
 	ns.DB.ResetProfile()
 	Print("Profile reset to defaults.")
+	ns.Changed()
+end)
+
+local function listProfiles()
+	local current = ns.DB.ProfileName()
+	for _, name in ipairs(ns.DB.ProfileNames()) do
+		local users = ns.DB.ProfileUsers(name)
+		Print(("%s%s |cff888888(%d character%s)|r"):format(name == current and "> " or "  ", Escape(name), users, users == 1 and "" or "s"))
+	end
+	Print("This character uses the profile marked >.")
+end
+
+add("profile", "profile [<name> || new <name> || copy <name> || rename <name> || delete <name> yes] - list profiles, switch, or manage them", function(rest)
+	local sub, arg = rest:match("^(%S*)%s*(.-)$")
+	local verb = (sub or ""):lower()
+	if verb == "" then
+		listProfiles()
+		return
+	end
+	local name, err
+	if verb == "new" then
+		name, err = ns.DB.NewProfile(arg)
+		if name then Print(("Switched to new profile '%s'."):format(Escape(name))) end
+	elseif verb == "copy" then
+		local previous
+		previous, err = ns.DB.CopyProfile(arg)
+		if previous then Print(("Copied '%s' into '%s'."):format(Escape(arg), Escape(ns.DB.ProfileName()))) end
+		name = previous and true
+	elseif verb == "rename" then
+		name, err = ns.DB.RenameProfile(arg)
+		if name then Print(("Renamed to '%s'."):format(Escape(name))) end
+	elseif verb == "delete" then
+		local target, confirm = arg:match("^(.-)%s+(yes)$")
+		if not target then
+			Print(("This deletes the profile '%s'. Type |cffffff00/jest profile delete %s yes|r to confirm."):format(Escape(arg), Escape(arg)))
+			return
+		end
+		local removed
+		removed, err = ns.DB.DeleteProfile(target)
+		if removed then Print(("Deleted '%s'."):format(Escape(removed.name))) end
+		name = removed and true
+	else
+		name, err = ns.DB.SetProfile(rest)
+		if name then Print(("Using profile '%s'."):format(Escape(name))) end
+	end
+	if not name then
+		Print(Escape(err))
+		return
+	end
 	ns.Changed()
 end)
 
