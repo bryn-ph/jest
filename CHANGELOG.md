@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.0-beta
 
 - **Profiles.** Each new character now starts with a fresh profile of its own (named "Character - Realm") instead of inheriting another character's wheels. Characters you already use keep the shared "Default" profile.
 - The editor's new **Profile** dropdown (top right) lists your profiles: click one to switch, **×** to delete it (even the one you're on), or **+ New profile...**. The **...** button next to it renames this profile, copies another profile's wheels and settings into it, or resets it. Copy, reset and delete can be undone. Renaming a profile keeps every character that uses it.
