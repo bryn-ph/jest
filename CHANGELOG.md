@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.0-beta
 
 - **A cleaner, native-looking window.** Jest's window is now a standard game window, like the Collections or Character windows: the Jest portrait and title, the game's own close button, inset panels and text boxes. Its bottom tabs split it into **Wheels** (your wheels and the slice editor) and **Options**. Your wheels sit as tabs along the top of the Wheels page, and the Profile dropdown is in the top bar.
 - Settings moved into the **Options** tab: key bindings, ring radius, cancel zone, scale, scrolling, reopening on the last wheel, sounds and the minimap button. The *Appearance* page in the game's Settings is gone; *Options → AddOns → Jest* still opens Jest.
