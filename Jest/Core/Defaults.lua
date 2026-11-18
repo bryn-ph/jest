@@ -9,6 +9,7 @@ ns.Defaults = {
 		scale = 1,
 		sounds = true,
 		rememberWheel = false, -- reopen on the wheel used last, instead of the first
+		scrollSteps = 2, -- mouse-wheel notches needed to switch wheels
 		wheels = {
 			{
 				name = "Emotes",
@@ -29,14 +30,20 @@ ns.Defaults = {
 }
 
 -- Allowed range for each numeric profile setting: { min, max }.
+-- Account-wide, not per profile: the minimap button is part of your UI, not your wheels.
+-- angle: degrees anticlockwise from 3 o'clock (225 = bottom left).
+ns.Defaults.minimap = { angle = 225, hide = false }
+
 ns.Limits = {
 	radius = { 40, 300 },
 	deadZone = { 8, 100 },
 	scale = { 0.5, 2 },
+	scrollSteps = { 1, 5 },
 }
 
 ns.LABEL_MAX = 40
 ns.WHEEL_NAME_MAX = 24
+ns.PROFILE_NAME_MAX = 32
 ns.NEW_WHEEL_SLICES = 4 -- empty slices a new wheel starts with, ready to drop things onto
 
 -- Emotes have no icons of their own; these are thematic stand-ins.

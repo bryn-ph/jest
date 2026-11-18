@@ -16,12 +16,12 @@ Use it as a quick-access menu for the things you don't want on your action bars,
 - Number keys fire slices while the wheel is open; a second key repeats the last one.
 - Editor window with a live preview: drag slices to rearrange, pick icons and labels, set key bindings. It stays open alongside your bags.
 - Icon picker with search: type "dance" or "beer" to find an icon by name, filtered to Abilities, Achievements, Items or All.
-- Settings are saved account-wide.
+- Profiles: each character starts with its own fresh wheels. Switch between profiles, copy one into another, or share one between characters from the editor's **Profile** menu.
 
 
 ## Usage
 
-1. Type `/jest` to open Jest's window (also under *Options → AddOns → Jest*) and set the **Open wheel** key.
+1. Type `/jest` or click the minimap button to open Jest's window (also under *Options → AddOns → Jest*), and set the **Open wheel** key.
 2. Hold the key, move the mouse toward a slice, and release.
 
 | While the wheel is open | |

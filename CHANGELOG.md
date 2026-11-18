@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.0-beta
+
+- **Profiles.** Each new character now starts with a fresh profile of its own (named "Character - Realm") instead of inheriting another character's wheels. Characters you already use keep the shared "Default" profile.
+- The editor's new **Profile** dropdown (top right) lists your profiles: click one to switch, **×** to delete it (even the one you're on), or **+ New profile...**. The **...** button next to it renames this profile, copies another profile's wheels and settings into it, or resets it. Copy, reset and delete can be undone. Renaming a profile keeps every character that uses it.
+- `/jest profile` lists profiles; `/jest profile <name>` switches; `/jest profile new|copy|rename|delete`.
+- **Minimap button.** Click it to open the editor; drag it round the minimap's edge to move it. Hide it under *Appearance → Minimap button* or with `/jest minimap`.
+- Switching wheels now takes two notches of the mouse wheel, so a stray scroll doesn't change wheels. Change it under *Appearance → Scroll to switch wheels* (1–5) or with `/jest scrollsteps`.
+- Fixed: the wheel tab right-click menu was missing its background.
+
 ## v0.4.1-beta
 
 - Dragging a slice to a new place in the editor now moves it there and shifts the slices in between along, keeping their order, instead of swapping two slices. While you drag, the other icons slide round the ring to show where everything will end up, and the target is highlighted ("Move to slot 5"). Moves can be undone.

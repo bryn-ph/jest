@@ -868,11 +868,13 @@ local function wheelTab(i)
 	tab.index = i
 	tab:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	tab:SetScript("OnClick", function(self, mouseButton)
-		if mouseButton == "RightButton" then
-			selectWheel(self.index)
+		-- Its right-click menu is anchored here, so clicks on the tab don't close it by
+		-- themselves: right-click toggles it, left-click closes it.
+		local menuOpenHere = ns.Widgets.MenuIsOpen() and ns.Widgets.MenuAnchor() == self
+		ns.Widgets.CloseMenu()
+		selectWheel(self.index)
+		if mouseButton == "RightButton" and not menuOpenHere then
 			wheelMenu(self)
-		else
-			selectWheel(self.index)
 		end
 	end)
 	tab:SetScript("OnDoubleClick", function(self) startRename(self.index) end)
@@ -1006,6 +1008,154 @@ local function buildTabs()
 end
 
 ---------------------------------------------------------------------------
+-- Profiles: the header's dropdown. Each profile is a whole set of wheels plus appearance
+-- settings; switching shows its first wheel.
+---------------------------------------------------------------------------
+-- After the profile's contents or this character's profile changed.
+local function profileChanged(message)
+	selected = 1
+	loadDraft()
+	ns.Changed()
+	setStatus(message)
+end
+
+-- Undo for a copy or reset: put the profile's earlier contents back.
+local function offerRestore(name, previous)
+	offerUndo(function()
+		if ns.DB.ProfileName() ~= name or not ns.DB.RestoreProfile(name, previous) then return false end
+		selected = 1
+		loadDraft()
+		ns.Changed()
+	end)
+end
+
+local function switchProfile(name)
+	settleDraft()
+	ns.DB.SetProfile(name)
+	profileChanged(("Using profile \"%s\"."):format(name))
+end
+
+local function newProfile()
+	ns.Widgets.Prompt("New profile", "", function(text)
+		settleDraft()
+		local name, err = ns.DB.NewProfile(text)
+		if not name then return err end
+		profileChanged(("Switched to \"%s\", which starts with the default wheel."):format(name))
+	end)
+end
+
+local function copyProfile(from)
+	settleDraft()
+	local current = ns.DB.ProfileName()
+	local previous, err = ns.DB.CopyProfile(from)
+	if not previous then
+		setStatus(err, true)
+		return
+	end
+	profileChanged(("Copied \"%s\" into \"%s\"."):format(from, current))
+	offerRestore(current, previous)
+end
+
+local function renameProfile()
+	ns.Widgets.Prompt("Rename profile", ns.DB.ProfileName(), function(text)
+		local name, err = ns.DB.RenameProfile(text)
+		if not name then return err end
+		Panel.Refresh()
+		setStatus(("Renamed to \"%s\"."):format(name))
+	end)
+end
+
+local function resetProfile()
+	settleDraft()
+	local current = ns.DB.ProfileName()
+	local previous = ns.DB.ResetProfile()
+	profileChanged(("Reset \"%s\" to the default wheel."):format(current))
+	offerRestore(current, previous)
+end
+
+local function usedBy(name)
+	local n = ns.DB.ProfileUsers(name)
+	if n == 0 then return nil end
+	return ("Used by %d character%s."):format(n, n == 1 and "" or "s")
+end
+
+-- Delete from the list's "x". The list stays open (re-shown) so several can go in a row.
+local function deleteProfile(name, anchor)
+	settleDraft()
+	local removed, err = ns.DB.DeleteProfile(name)
+	if not removed then
+		setStatus(err, true)
+		return
+	end
+	if removed.switchedTo then
+		profileChanged(("Deleted \"%s\". This character now uses \"%s\"."):format(removed.name, removed.switchedTo))
+	else
+		Panel.Refresh()
+		setStatus(("Deleted \"%s\"."):format(removed.name))
+	end
+	offerUndo(function()
+		if not ns.DB.UndeleteProfile(removed) then return false end
+		if removed.switchedTo then
+			selected = 1
+			loadDraft()
+			ns.Changed()
+		else
+			Panel.Refresh()
+		end
+	end)
+	if anchor and #ns.DB.ProfileNames() > 0 then Panel.OpenProfileMenu(anchor) end
+end
+
+-- The Profile dropdown: just the profiles. Click one to switch; "x" deletes it.
+function Panel.OpenProfileMenu(anchor)
+	local current = ns.DB.ProfileName()
+	local names = ns.DB.ProfileNames()
+	local items = {}
+	for _, name in ipairs(names) do
+		local item = {
+			text = name,
+			checked = name == current,
+			tooltip = name == current and "This character's profile." or usedBy(name),
+			onClick = name ~= current and function() switchProfile(name) end or nil,
+		}
+		if #names > 1 then
+			item.onRemove = function() deleteProfile(name, anchor) end
+			item.removeTooltip = name == current
+				and "Delete this profile (this character moves to another one). You can undo it."
+				or "Delete this profile. You can undo it."
+		end
+		items[#items + 1] = item
+	end
+	items[#items + 1] = { separator = true }
+	items[#items + 1] = { text = "+ New profile...", onClick = newProfile,
+		tooltip = "Make a new profile with the default wheel, and switch this character to it." }
+	ns.Widgets.ShowMenu(anchor, items)
+end
+
+-- The "..." button: things to do to this character's profile.
+function Panel.OpenProfileOptions(anchor)
+	local current = ns.DB.ProfileName()
+	local others = {}
+	for _, name in ipairs(ns.DB.ProfileNames()) do
+		if name ~= current then others[#others + 1] = name end
+	end
+	ns.Widgets.ShowMenu(anchor, {
+		{ text = "Rename...", onClick = renameProfile, tooltip = "Every character using this profile keeps it." },
+		{ text = "Copy from...", disabled = #others == 0,
+			tooltip = "Replace this profile's wheels and settings with a copy of another profile's. You can undo it.",
+			onClick = function()
+				local items = { { text = "Copy into \"" .. current .. "\":", disabled = true } }
+				for _, name in ipairs(others) do
+					items[#items + 1] = { text = name, tooltip = usedBy(name), onClick = function() copyProfile(name) end }
+				end
+				ns.Widgets.ShowMenu(anchor, items)
+			end },
+		{ separator = true },
+		{ text = "Reset to default wheel", onClick = resetProfile, tooltip = "You can undo it." },
+	})
+end
+
+---------------------------------------------------------------------------
 -- Build
 ---------------------------------------------------------------------------
 local function buildHeader()
@@ -1021,6 +1171,62 @@ local function buildHeader()
 	ui.appearance:SetPoint("TOPRIGHT", canvas, "TOPRIGHT", -30, -8) -- clear of the close button
 	ui.appearance:SetScript("OnClick", function() Panel.OpenAppearance() end)
 	tooltip(ui.appearance, "Appearance", "Ring radius, cancel zone, scale, sounds and which wheel opens first. Opens in the game's Settings.")
+
+	-- Profile dropdown: which named set of wheels this character uses.
+	local p = CreateFrame("Button", nil, canvas, "BackdropTemplate")
+	p:SetSize(220, 22)
+	p:SetPoint("RIGHT", ui.appearance, "LEFT", -34, 0) -- room for the "..." button
+	p:SetBackdrop(BOX_BACKDROP)
+	p:SetBackdropColor(0, 0, 0, 0.5)
+	p:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+	p.caption = label(p, "Profile", "GameFontDisableSmall")
+	p.caption:SetPoint("LEFT", 8, 0)
+	p.arrow = p:CreateTexture(nil, "ARTWORK")
+	p.arrow:SetSize(18, 18)
+	p.arrow:SetPoint("RIGHT", -2, 0)
+	p.arrow:SetTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+	p.arrow:SetTexCoord(0.2, 0.8, 0.2, 0.8)
+	p.text = label(p, "", "GameFontHighlightSmall")
+	p.text:SetPoint("LEFT", p.caption, "RIGHT", 6, 0)
+	p.text:SetPoint("RIGHT", p.arrow, "LEFT", -2, 0)
+	p.text:SetWordWrap(false)
+	local hover = p:CreateTexture(nil, "HIGHLIGHT")
+	hover:SetPoint("TOPLEFT", 1, -1)
+	hover:SetPoint("BOTTOMRIGHT", -1, 1)
+	hover:SetColorTexture(1, 1, 1, 0.06)
+	p:SetScript("OnClick", function(self)
+		if ns.Widgets.MenuIsOpen() then
+			ns.Widgets.CloseMenu()
+		else
+			Panel.OpenProfileMenu(self)
+		end
+	end)
+	tooltip(p, "Profile", "Your wheels and appearance settings. Each new character starts with its own profile. Pick another to switch, or make a new one. Profiles are shared across your account.")
+	ui.profile = p
+
+	-- "...": rename, copy from or reset the profile in use.
+	local more = CreateFrame("Button", nil, canvas, "BackdropTemplate")
+	more:SetSize(24, 22)
+	more:SetPoint("LEFT", p, "RIGHT", 4, 0)
+	more:SetBackdrop(BOX_BACKDROP)
+	more:SetBackdropColor(0, 0, 0, 0.5)
+	more:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+	more.text = more:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	more.text:SetPoint("CENTER", 0, 3)
+	more.text:SetText("...")
+	local moreHover = more:CreateTexture(nil, "HIGHLIGHT")
+	moreHover:SetPoint("TOPLEFT", 1, -1)
+	moreHover:SetPoint("BOTTOMRIGHT", -1, 1)
+	moreHover:SetColorTexture(1, 1, 1, 0.08)
+	more:SetScript("OnClick", function(self)
+		if ns.Widgets.MenuIsOpen() then
+			ns.Widgets.CloseMenu()
+		else
+			Panel.OpenProfileOptions(self)
+		end
+	end)
+	tooltip(more, "Profile options", "Rename this profile, copy another profile into it, or reset it.")
+	ui.profileOptions = more
 end
 
 local function buildBindings()
@@ -1421,6 +1627,7 @@ function Panel.Refresh()
 	ui.remove:SetEnabled(#list > 1)
 	ui.bindWheel:Refresh()
 	ui.bindRepeat:Refresh()
+	ui.profile.text:SetText(ns.DB.ProfileName())
 	-- Reload the draft unless it holds unsaved edits for the slice still selected.
 	if draft.slice ~= list[selected] or not isDirty() then loadDraft() end
 	updateEditor()
@@ -1444,6 +1651,7 @@ canvas:SetScript("OnHide", function()
 	ns.EmoteMenu.Close()
 	ns.IconPicker.Close()
 	ns.Widgets.CloseMenu()
+	ns.Widgets.ClosePrompt()
 	if ui.renameBox then ui.renameBox:ClearFocus() end
 end)
 
@@ -1486,6 +1694,8 @@ local function registerAppearance(parent)
 		"Releasing the key within this distance of the centre cancels.", whole)
 	slider("scale", "Wheel scale", 0.05, function(v) return ("%.2f"):format(v) end,
 		"Overall size of the wheel.", twentieths)
+	slider("scrollSteps", "Scroll to switch wheels", 1, function(v) return ("%d notch%s"):format(v, v == 1 and "" or "es") end,
+		"With more than one wheel: how many notches of the mouse wheel it takes to switch to the next one. Higher is harder to do by accident.", whole)
 
 	local sounds = Settings.RegisterProxySetting(sub, "JEST_SOUNDS", varType.Boolean or "boolean", "Sounds",
 		ns.Defaults.profile.sounds,
@@ -1501,6 +1711,13 @@ local function registerAppearance(parent)
 			ns.Changed()
 		end)
 	Settings.CreateCheckbox(sub, remember, "With more than one wheel: open on the wheel you used last. Off, it always opens on the first wheel, so directions stay the same every time.")
+
+	-- Account-wide, unlike the settings above (which belong to the profile).
+	local minimap = Settings.RegisterProxySetting(sub, "JEST_MINIMAP_BUTTON", varType.Boolean or "boolean",
+		"Minimap button", not ns.Defaults.minimap.hide,
+		function() return ns.MinimapButton.IsShown() end,
+		function(v) ns.MinimapButton.SetShown(v) end)
+	Settings.CreateCheckbox(sub, minimap, "Show the Jest button on the minimap edge. Click it to open the editor; drag it to move it. Applies to all characters.")
 	return sub
 end
 
