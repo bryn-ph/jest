@@ -242,8 +242,12 @@ local function createMenu()
 	menu:Hide()
 	menu.rows = {}
 	table.insert(UISpecialFrames, "JestContextMenu") -- Esc closes it
+	-- Close on a click outside the menu. A click on the button that opened it is left to that
+	-- button, which toggles: closing here first would make its click reopen the menu.
 	menu:SetScript("OnEvent", function(self)
-		if not self:IsMouseOver() then self:Hide() end
+		if self:IsMouseOver() then return end
+		if self.anchor and self.anchor:IsMouseOver() then return end
+		self:Hide()
 	end)
 	menu:SetScript("OnShow", function(self)
 		pcall(self.RegisterEvent, self, "GLOBAL_MOUSE_DOWN")
@@ -349,6 +353,7 @@ function Widgets.ShowMenu(anchor, items)
 	menu:SetSize(math.min(MENU_MAX_W, width), -y + 5)
 	menu:ClearAllPoints()
 	menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+	menu.anchor = anchor
 	menu:Show()
 	menu:Raise()
 end
@@ -431,4 +436,9 @@ end
 
 function Widgets.ClosePrompt()
 	if prompt then prompt:Hide() end
+end
+
+-- The frame the open menu belongs to (nil when closed).
+function Widgets.MenuAnchor()
+	return menu and menu:IsShown() and menu.anchor or nil
 end

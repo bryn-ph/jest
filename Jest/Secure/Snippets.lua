@@ -83,6 +83,9 @@ ns.Snippets.OnClick = [=[
 		anchor:ClearAllPoints()
 		anchor:SetPoint("CENTER", "$cursor", "BOTTOMLEFT", 0, 0)
 		self:SetAttribute("open", true)
+		-- Partly scrolled notches from last time don't count towards this opening.
+		local pager = self:GetFrameRef("pager")
+		if pager then pager:SetAttribute("scrollcount", 0) end
 		-- Number keys for the biggest wheel, so scrolling never needs a rebind. Picks beyond the
 		-- wheel showing are ignored.
 		self:ClearBindings()
@@ -149,15 +152,30 @@ ns.Snippets.OnPage = [=[
 	if not wheel:GetAttribute("open") then return end
 	local W = wheel:GetAttribute("wheels") or 0
 	if W < 2 then return end
-	local page = wheel:GetAttribute("page") or 1
-	if page > W then page = 1 end
+	local step
 	if button == "next" then
-		page = page % W + 1
+		step = 1
 	elseif button == "prev" then
-		page = (page - 2) % W + 1
+		step = -1
 	else
 		return
 	end
+
+	-- Switch only after "scrollsteps" notches in the same direction, so a stray flick of the
+	-- mouse wheel doesn't change wheels. Reversing starts the count again; so does opening.
+	local need = wheel:GetAttribute("scrollsteps") or 1
+	local count = self:GetAttribute("scrollcount") or 0
+	if count * step < 0 then count = 0 end
+	count = count + step
+	if count * step < need then
+		self:SetAttribute("scrollcount", count)
+		return
+	end
+	self:SetAttribute("scrollcount", 0)
+
+	local page = wheel:GetAttribute("page") or 1
+	if page > W then page = 1 end
+	page = (page - 1 + step) % W + 1
 	wheel:SetAttribute("page", page)
 	wheel:CallMethod("JestOnPage", page)
 ]=]

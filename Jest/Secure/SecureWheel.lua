@@ -67,6 +67,7 @@ local function create()
 	local pager = CreateFrame("Button", "JestPagerButton", UIParent, "SecureHandlerClickTemplate")
 	pager:RegisterForClicks("AnyDown", "AnyUp")
 	SecureHandlerSetFrameRef(pager, "wheel", btn)
+	SecureHandlerSetFrameRef(btn, "pager", pager) -- so opening can reset its notch count
 	pager:SetAttribute("_onclick", ns.Snippets.OnPage)
 end
 
@@ -132,6 +133,7 @@ function SW.Apply()
 	btn:SetAttribute("wheels", #wheels)
 	btn:SetAttribute("maxslices", maxSlices)
 	btn:SetAttribute("remember", profile.rememberWheel and true or false)
+	btn:SetAttribute("scrollsteps", profile.scrollSteps)
 	-- The snippet measures in UIParent units, but the wheel is drawn scaled.
 	btn:SetAttribute("deadzone", profile.deadZone * profile.scale)
 	-- First apply after loading: start on the wheel this character had last (only used when

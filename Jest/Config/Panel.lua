@@ -868,11 +868,13 @@ local function wheelTab(i)
 	tab.index = i
 	tab:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	tab:SetScript("OnClick", function(self, mouseButton)
-		if mouseButton == "RightButton" then
-			selectWheel(self.index)
+		-- Its right-click menu is anchored here, so clicks on the tab don't close it by
+		-- themselves: right-click toggles it, left-click closes it.
+		local menuOpenHere = ns.Widgets.MenuIsOpen() and ns.Widgets.MenuAnchor() == self
+		ns.Widgets.CloseMenu()
+		selectWheel(self.index)
+		if mouseButton == "RightButton" and not menuOpenHere then
 			wheelMenu(self)
-		else
-			selectWheel(self.index)
 		end
 	end)
 	tab:SetScript("OnDoubleClick", function(self) startRename(self.index) end)
@@ -1692,6 +1694,8 @@ local function registerAppearance(parent)
 		"Releasing the key within this distance of the centre cancels.", whole)
 	slider("scale", "Wheel scale", 0.05, function(v) return ("%.2f"):format(v) end,
 		"Overall size of the wheel.", twentieths)
+	slider("scrollSteps", "Scroll to switch wheels", 1, function(v) return ("%d notch%s"):format(v, v == 1 and "" or "es") end,
+		"With more than one wheel: how many notches of the mouse wheel it takes to switch to the next one. Higher is harder to do by accident.", whole)
 
 	local sounds = Settings.RegisterProxySetting(sub, "JEST_SOUNDS", varType.Boolean or "boolean", "Sounds",
 		ns.Defaults.profile.sounds,

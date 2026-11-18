@@ -861,7 +861,11 @@ local pagerSnippet = assert(loadstring('local self, button, down = ...\n' .. ns.
 local pager = JestPagerButton
 check(pager and pager.__attrs._onclick == ns.Snippets.OnPage, 'pager button carries the paging snippet')
 pager.GetFrameRef = function() return btn end
+btn.GetFrameRef = function(_, name) if name == 'pager' then return pager end return anchor end
 local function scroll(b, d) return pagerSnippet(pager, b, d) end
+-- these paging tests switch on every notch; the default (2 notches) is tested further down
+check(ns.DB.Profile().scrollSteps == 2 and btn.__attrs.scrollsteps == 2, 'two notches per switch by default')
+ns.DB.Profile().scrollSteps = 1; ns.Changed()
 local function bindingsCopy() local c = {} for k, v in pairs(bound) do c[k] = v end return c end
 local function sameBindings(a) for k, v in pairs(a) do if bound[k] ~= v then return false end end for k in pairs(bound) do if a[k] == nil then return false end end return true end
 
@@ -894,6 +898,31 @@ check(click('pick3', false) == 'w2s3', 'number keys pick from the wheel showing'
 scroll('next', false); scroll('next', true)
 check(btn.__attrs.page == 2, 'scrolling does nothing while closed')
 ns.DB.Profile().rememberWheel = false; ns.Changed()
+
+-- the default: two notches in the same direction per switch
+ns.DB.Profile().scrollSteps = 2; ns.Changed()
+local function notch(b) scroll(b, true); scroll(b, false) end -- a down + up pair
+click('LeftButton', true)
+check(btn.__attrs.page == 1, 'opens on wheel 1')
+notch('next')
+check(btn.__attrs.page == 1, 'one notch is not enough')
+notch('next')
+check(btn.__attrs.page == 2, 'the second notch switches')
+notch('next'); notch('prev')
+check(btn.__attrs.page == 2, 'reversing starts the count again')
+notch('prev')
+check(btn.__attrs.page == 1, 'two notches back switch back')
+notch('next')
+click('cancel', false)
+click('LeftButton', true)
+notch('next')
+check(btn.__attrs.page == 1, 'a half-finished scroll is forgotten when the wheel reopens')
+click('cancel', false)
+SlashCmdList.JEST('scrollsteps 3')
+check(btn.__attrs.scrollsteps == 3, '/jest scrollsteps')
+SlashCmdList.JEST('scrollsteps 9')
+check(btn.__attrs.scrollsteps == 3, 'out of range rejected')
+ns.DB.Profile().scrollSteps = 2; ns.Changed()
 
 -- "Reopen on last wheel" checkbox in the editor, and the last wheel surviving a reload
 check(ui.remember.__shown and ui.rememberLabel.__shown, 'remember checkbox shows with two wheels')
@@ -998,6 +1027,17 @@ local function rowNamed(text)
 end
 ns.Panel.Refresh()
 check(ui.profile.text:GetText() == 'Default', 'the header shows this character\'s profile')
+-- clicking the dropdown again closes it: the mouse-down on it must not close the menu first
+openProfiles()
+ui.profile.IsMouseOver = function() return true end
+JestContextMenu.__scripts.OnEvent(JestContextMenu, 'GLOBAL_MOUSE_DOWN')
+check(JestContextMenu.__shown, 'a mouse-down on the dropdown leaves the menu to it')
+ui.profile:Click()
+check(not JestContextMenu.__shown, 'clicking the dropdown again closes the menu')
+ui.profile.IsMouseOver = nil
+openProfiles()
+JestContextMenu.__scripts.OnEvent(JestContextMenu, 'GLOBAL_MOUSE_DOWN')
+check(not JestContextMenu.__shown, 'a click anywhere else still closes it')
 openProfiles()
 check(rows()[1].text:GetText() == 'Alt - Realm' and rows()[2].text:GetText() == 'Default', 'profiles listed alphabetically')
 rowNamed('Alt - Realm'):Click()

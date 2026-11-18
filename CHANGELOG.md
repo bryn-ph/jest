@@ -6,6 +6,7 @@
 - The editor's new **Profile** dropdown (top right) lists your profiles: click one to switch, **×** to delete it (even the one you're on), or **+ New profile...**. The **...** button next to it renames this profile, copies another profile's wheels and settings into it, or resets it. Copy, reset and delete can be undone. Renaming a profile keeps every character that uses it.
 - `/jest profile` lists profiles; `/jest profile <name>` switches; `/jest profile new|copy|rename|delete`.
 - **Minimap button.** Click it to open the editor; drag it round the minimap's edge to move it. Hide it under *Appearance → Minimap button* or with `/jest minimap`.
+- Switching wheels now takes two notches of the mouse wheel, so a stray scroll doesn't change wheels. Change it under *Appearance → Scroll to switch wheels* (1–5) or with `/jest scrollsteps`.
 - Fixed: the wheel tab right-click menu was missing its background.
 
 ## v0.4.1-beta

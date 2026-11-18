@@ -246,6 +246,7 @@ end
 add("radius", "radius <40-300> - distance from the centre to the icons", numberSetting("radius"))
 add("deadzone", "deadzone <8-100> - size of the cancel zone in the centre", numberSetting("deadZone"))
 add("scale", "scale <0.5-2> - overall wheel size", numberSetting("scale"))
+add("scrollsteps", "scrollsteps <1-5> - mouse-wheel notches to switch wheels", numberSetting("scrollSteps"))
 
 add("sound", "sound on||off", function(rest)
 	local profile = ns.DB.Profile()
