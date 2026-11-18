@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **A cleaner, native-looking window.** Jest's window is now a standard game window, like the Collections or Character windows: the Jest portrait and title, the game's own close button, inset panels and text boxes. Its bottom tabs split it into **Wheels** (your wheels and the slice editor) and **Options**. Your wheels sit as tabs along the top of the Wheels page, and the Profile dropdown is in the top bar.
+- Settings moved into the **Options** tab: key bindings, ring radius, cancel zone, scale, scrolling, reopening on the last wheel, sounds and the minimap button. The *Appearance* page in the game's Settings is gone; *Options → AddOns → Jest* still opens Jest.
+- The icon picker and the name prompt use the same native window style.
+- **Cooldowns on the wheel.** Items, toys and spells show a cooldown swipe and the time left, live while the wheel is open.
+- Fixed: mount slices didn't summon (e.g. a paladin's Summon Warhorse). Mounts now summon through the mount journal, whether dragged from the journal or the spellbook, and firing the mount you're on dismounts.
+- Fixed: a left click then a quick right click on a wheel tab started renaming it; it now opens the menu. Only a double left click renames.
+
 ## v0.5.0-beta
 
 - **Profiles.** Each new character now starts with a fresh profile of its own (named "Character - Realm") instead of inheriting another character's wheels. Characters you already use keep the shared "Default" profile.
@@ -34,8 +43,7 @@
 
 ## v0.2.0-alpha
 
-- Slices can now hold anything you can drag: items and consumables, spells, mounts, toys, battle pets, macros and equipment sets. They fire in combat wherever the game allows.
-- Drag things from your bags, spellbook or collections onto the wheel preview: drop on a slice to replace it (with Undo), or in the centre to add one. The editor has a new **Action** tab with its own drop box.
+- Slices can now hold anything you can drag: items and consumables, spells, mounts, toys, from your bags, spellbook or collections onto the wheel preview: drop on a slice to replace it (with Undo), or in the centre to add one. The editor has a new **Action** tab with its own drop box.
 - Item slices show how many you have; they grey out at zero.
 - `/jest set <n> item|spell|toy <id>`.
 - Fixed: long macro text no longer spills out of the editor box; it scrolls instead.

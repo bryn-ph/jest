@@ -1,6 +1,8 @@
--- Options panel (Options > AddOns > Jest).
---   Jest:       key bindings, a wheel preview (click to select, drag to swap) and the slice editor
---   Appearance: radius, cancel zone, scale and sounds
+-- Jest's window (/jest, the minimap button, Options > AddOns > Jest): a standard game window
+-- with pages behind its bottom tabs.
+--   Wheels:  the wheel tabs, a wheel preview (click to select, drag to move) and the slice editor
+--   Options: key bindings and settings (Config/Options.lua)
+-- The Profile dropdown sits in the window's top band, on every page.
 -- Edits write to the DB and call ns.Changed().
 local addonName, ns = ...
 
@@ -11,18 +13,22 @@ ns.Panel = Panel
 local PREVIEW = { radius = 88, deadZone = 22, iconSize = 30, centreIconSize = 32 }
 local COLUMN_W = 2 * (PREVIEW.radius + PREVIEW.iconSize)
 local CLICK_AFTER_DRAG = 0.2 -- ignore the click that some clients send right after a drag ends
-local LEFT = 16          -- canvas left padding
-local FIELD_X = 70       -- x of input controls inside the editor card
+local LEFT = 16          -- padding inside a page
+local FIELD_X = 70       -- x of input controls inside the slice editor
 local STATUS_SECONDS = 4 -- success messages clear themselves after this long
 
 local UNDO_SECONDS = 10
 local CURSOR_POLL = 0.1  -- how often the preview checks whether you're holding something droppable
 
--- Wheel tabs
-local TABS_Y = -168
-local TAB_H, TAB_PAD, TAB_GAP = 22, 12, 3
-local TAB_MIN_W, TAB_MAX_W = 48, 130
-local BOX_BACKDROP = { bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 }
+-- Window layout
+local WINDOW_W, WINDOW_H = 720, 470
+local PAGE_TOP = -60      -- below the title bar and the top band (where the inset starts)
+local LEFT_INSET_W = COLUMN_W + 28
+
+-- Wheel tabs (native top tabs across the top of the Wheels page)
+local TAB_H = 24
+local TAB_MIN_W, TAB_MAX_W = 56, 120
+local RENAME_EXTRA_W = 26 -- a tab being renamed is this much wider, so the whole name shows
 
 -- Editor tabs. "action" covers every draggable kind in Core/Actions.lua (item, spell, mount...).
 local KINDS = { "emote", "macro", "action" }
@@ -30,7 +36,7 @@ local KIND_LABEL = { emote = "Emote", macro = "Macro", action = "Action" }
 local KIND_HINT = {
 	emote = "Pick from every emote the game knows; type in the list to search. Tags show whether an emote animates (Anim) and/or speaks (Voice).",
 	macro = "Any macro text, e.g. /cast or /use. For a custom emote line, use /e: /e twirls dramatically. Max 255 characters.",
-	action = "Drag an item, spell, mount, toy, battle pet, macro or equipment set onto this box, or onto any slice in the preview. Drops save straight away.",
+	action = "Drag an item, spell, mount, toy, macro or equipment set onto this box, or onto any slice in the preview. Drops save straight away.",
 }
 local DROP_PROMPT = "Drag something here"
 
@@ -46,37 +52,68 @@ end
 local BIND_WHEEL = "CLICK JestWheelButton:LeftButton"
 local BIND_REPEAT = "CLICK JestWheelButton:repeat"
 
--- The editor has its own window rather than living in the Settings panel. While Settings is
--- open the game refuses to open its bags (and you drag things from your bags onto the wheel),
--- and closing Settings always brings up the Game Menu. Options > AddOns > Jest only has a
--- button that opens this window; the Appearance sliders stay in Settings.
-local WINDOW_W, WINDOW_H = 690, 630
-local window = CreateFrame("Frame", "JestEditor", UIParent, "BackdropTemplate")
-window:SetSize(WINDOW_W, WINDOW_H)
+-- The window isn't part of the game's Settings panel: while Settings is open the game refuses
+-- to open its bags (and you drag things from your bags onto the wheel), and closing Settings
+-- always brings up the Game Menu. Options > AddOns > Jest only has a button that opens this.
+local window = ns.Widgets.NativeWindow("JestEditor", "Jest", WINDOW_W, WINDOW_H, {
+	portrait = "Interface\\AddOns\\" .. addonName .. "\\Media\\icon",
+	inset = false, -- each page draws its own inset panels
+})
 window:SetPoint("CENTER", -150, 30) -- left of centre, leaving room for bags on the right
 window:SetFrameStrata("HIGH")
-window:SetToplevel(true)
-window:SetClampedToScreen(true)
-window:EnableMouse(true)
-window:SetMovable(true)
-window:RegisterForDrag("LeftButton")
-window:SetScript("OnDragStart", window.StartMoving)
-window:SetScript("OnDragStop", window.StopMovingOrSizing)
-window:SetBackdrop({
-	bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-	edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-	tile = true, tileSize = 32, edgeSize = 32,
-	insets = { left = 11, right = 12, top = 12, bottom = 11 },
-})
-window:Hide()
-table.insert(UISpecialFrames, "JestEditor") -- Esc closes it
-local closeButton = CreateFrame("Button", nil, window, "UIPanelCloseButton")
-closeButton:SetPoint("TOPRIGHT", -6, -6)
 
-local canvas = CreateFrame("Frame", nil, window)
-canvas:SetPoint("TOPLEFT", 12, -12)
-canvas:SetPoint("BOTTOMRIGHT", -12, 12)
-local category, appearanceCategory
+---------------------------------------------------------------------------
+-- Pages, one per bottom tab
+---------------------------------------------------------------------------
+local pages = {}      -- [key] = { frame =, tab =, index = }
+local currentPage
+
+-- Add a page and its bottom tab. Returns the page frame (the area below the top band).
+function Panel.AddPage(key, title)
+	local index = #window.jestTabs + 1
+	local page = CreateFrame("Frame", nil, window)
+	page:SetPoint("TOPLEFT", 4, PAGE_TOP)
+	page:SetPoint("BOTTOMRIGHT", -6, 4)
+	page:Hide()
+
+	local tab = CreateFrame("Button", "JestEditorTab" .. index, window, "PanelTabButtonTemplate")
+	tab:SetID(index)
+	tab:SetText(title)
+	if index == 1 then
+		tab:SetPoint("TOPLEFT", window, "BOTTOMLEFT", 11, 2)
+	end
+	tab:SetScript("OnClick", function()
+		Panel.ShowPage(key)
+		if PlaySound and SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB then
+			PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
+		end
+	end)
+	window.jestTabs[index] = tab
+	if PanelTemplates_SetNumTabs then PanelTemplates_SetNumTabs(window, index) end
+
+	pages[key] = { frame = page, tab = tab, index = index }
+	return page
+end
+window.jestTabs = {}
+
+function Panel.ShowPage(key)
+	local page = pages[key]
+	if not page then return end
+	currentPage = key
+	for k, p in pairs(pages) do
+		p.frame:SetShown(k == key)
+	end
+	if PanelTemplates_SetTab then PanelTemplates_SetTab(window, page.index) end
+end
+
+function Panel.CurrentPage()
+	return currentPage
+end
+
+local canvas = Panel.AddPage("wheels", "Wheels")
+-- The tab template resizes itself on show (and on display changes) from these parent fields.
+canvas.minTabWidth, canvas.maxTabWidth = TAB_MIN_W, TAB_MAX_W
+local category
 local built = false
 local ui = {}
 Panel._ui = ui -- internal; used by the tests
@@ -147,6 +184,7 @@ local function addonVersion()
 	end
 	return version
 end
+Panel.Version = addonVersion
 
 ---------------------------------------------------------------------------
 -- Key binding capture buttons
@@ -171,7 +209,9 @@ local function clearBinding(command)
 	if k2 then SetBinding(k2) end
 end
 
-local function createBindButton(parent, command)
+-- report(text, isError) shows messages (the page's status line).
+local function createBindButton(parent, command, report)
+	report = report or setStatus
 	local b = button(parent, "", 150)
 	b:RegisterForClicks("AnyUp")
 
@@ -203,13 +243,13 @@ local function createBindButton(parent, command)
 	local function assign(self, key)
 		stop(self)
 		if InCombatLockdown() then
-			setStatus("Key bindings can't be changed in combat.", true)
+			report("Key bindings can't be changed in combat.", true)
 			return
 		end
 		local previous = GetBindingAction(key)
 		clearBinding(command)
 		if not SetBinding(key, command) then
-			setStatus("Couldn't bind " .. keyText(key) .. ".", true)
+			report("Couldn't bind " .. keyText(key) .. ".", true)
 			self:Refresh()
 			return
 		end
@@ -217,9 +257,9 @@ local function createBindButton(parent, command)
 		self:Refresh()
 		if previous and previous ~= "" and previous ~= command then
 			local name = _G["BINDING_NAME_" .. previous] or previous
-			setStatus(("Bound %s. It was bound to \"%s\" before."):format(keyText(key), name))
+			report(("Bound %s. It was bound to \"%s\" before."):format(keyText(key), name))
 		else
-			setStatus("Bound " .. keyText(key) .. ".")
+			report("Bound " .. keyText(key) .. ".")
 		end
 	end
 
@@ -234,14 +274,14 @@ local function createBindButton(parent, command)
 			return
 		end
 		if InCombatLockdown() then
-			setStatus("Key bindings can't be changed in combat.", true)
+			report("Key bindings can't be changed in combat.", true)
 			return
 		end
 		if mouseButton == "RightButton" then
 			clearBinding(command)
 			SaveBindings(GetCurrentBindingSet())
 			self:Refresh()
-			setStatus("Key cleared.")
+			report("Key cleared.")
 			return
 		end
 		start(self)
@@ -264,6 +304,7 @@ local function createBindButton(parent, command)
 	tooltip(b, "Key binding", "Click, then press a key. Modifiers and middle/side mouse buttons work. Right-click to clear; Esc cancels.")
 	return b
 end
+Panel.CreateBindButton = createBindButton -- used by Config/Options.lua
 
 ---------------------------------------------------------------------------
 -- Drafts
@@ -303,7 +344,11 @@ local function actionAsMacro(a)
 	local name = ns.Actions.Name(a.kind, a.value)
 	if a.kind == "item" then return "/use item:" .. a.value end
 	if not name then return "" end
-	if a.kind == "spell" or a.kind == "mount" then return "/cast " .. name end
+	if a.kind == "mount" then
+		local spell = ns.Actions.MountSpellName(a.value)
+		return spell and ("/cast " .. spell) or ""
+	end
+	if a.kind == "spell" then return "/cast " .. name end
 	if a.kind == "toy" then return "/use " .. name end
 	if a.kind == "equipset" then return "/equipset " .. name end
 	return ""
@@ -691,7 +736,7 @@ local sincePoll = 0
 
 local function setHolding(now)
 	holding = now
-	local border = now and { 1, 0.82, 0, 1 } or { 0.4, 0.4, 0.4, 1 }
+	local border = now and { 1, 0.82, 0, 1 } or { 0.6, 0.6, 0.6, 1 }
 	ui.actionBox:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
 	if now then
 		ui.preview:SetCentre(nil, "Drop here to add", false)
@@ -824,31 +869,48 @@ local function renameWheel(i, text)
 	end
 end
 
+-- Native top tab (PanelTopTabButtonTemplate). Selection uses the game's own tab helpers, but
+-- PanelTemplates_SelectTab disables the tab, and a disabled button gets no double-clicks or
+-- right-clicks; so re-enable it and show the selected (white) font as its normal font.
+local TAB_HIGHLIGHTS = { "LeftHighlight", "MiddleHighlight", "RightHighlight" }
 local function styleTab(tab, active)
+	tab.jestSelected = active
+	-- The template's hover glow (an additive copy of the tab art) shows as a pale block on these
+	-- top tabs, and overhangs a selected one. Hide it: hovered tab text still turns white.
+	for _, key in ipairs(TAB_HIGHLIGHTS) do
+		local t = ns.Widgets.Child(tab, key)
+		if t then t:SetAlpha(0) end
+	end
 	if active then
-		tab:SetBackdropColor(1, 0.82, 0, 0.2)
-		tab:SetBackdropBorderColor(1, 0.82, 0, 0.9)
-		tab.text:SetTextColor(1, 1, 1)
+		if PanelTemplates_SelectTab then PanelTemplates_SelectTab(tab) end
+		tab:Enable()
+		tab:SetNormalFontObject(GameFontHighlightSmall)
 	else
-		tab:SetBackdropColor(0, 0, 0, 0.45)
-		tab:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-		tab.text:SetTextColor(0.7, 0.7, 0.7)
+		if PanelTemplates_DeselectTab then PanelTemplates_DeselectTab(tab) end
+		tab:SetNormalFontObject(GameFontNormalSmall)
 	end
 end
 
 local function createTab()
-	local tab = CreateFrame("Button", nil, canvas, "BackdropTemplate")
-	tab:SetHeight(TAB_H)
-	tab:SetBackdrop(BOX_BACKDROP)
-	tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	tab.text:SetPoint("LEFT", TAB_PAD, 0)
-	tab.text:SetPoint("RIGHT", -TAB_PAD, 0)
-	tab.text:SetWordWrap(false)
-	local hover = tab:CreateTexture(nil, "HIGHLIGHT")
-	hover:SetPoint("TOPLEFT", 1, -1)
-	hover:SetPoint("BOTTOMRIGHT", -1, 1)
-	hover:SetColorTexture(1, 1, 1, 0.08)
+	local tab = CreateFrame("Button", nil, canvas, "PanelTopTabButtonTemplate")
+	-- The template's text is tab.Text; keep a lower-case alias for the code below.
+	tab.text = ns.Widgets.Child(tab, "Text") or tab:GetFontString()
+	if not tab.text then -- only without the template (e.g. offline tests)
+		tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		tab:SetFontString(tab.text)
+	end
 	return tab
+end
+
+-- Size a tab to its text, like the game's own tabs. extra widens it (room for the rename box's
+-- insets and cursor).
+local function sizeTab(tab, extra)
+	extra = extra or 0
+	if PanelTemplates_TabResize then
+		PanelTemplates_TabResize(tab, extra, nil, TAB_MIN_W, TAB_MAX_W + extra)
+	else
+		tab:SetWidth(TAB_MIN_W + extra)
+	end
 end
 
 local function wheelMenu(tab)
@@ -867,7 +929,7 @@ local function wheelTab(i)
 	tab = createTab()
 	tab.index = i
 	tab:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-	tab:SetScript("OnClick", function(self, mouseButton)
+	local function onClick(self, mouseButton)
 		-- Its right-click menu is anchored here, so clicks on the tab don't close it by
 		-- themselves: right-click toggles it, left-click closes it.
 		local menuOpenHere = ns.Widgets.MenuIsOpen() and ns.Widgets.MenuAnchor() == self
@@ -876,11 +938,21 @@ local function wheelTab(i)
 		if mouseButton == "RightButton" and not menuOpenHere then
 			wheelMenu(self)
 		end
+	end
+	tab:SetScript("OnClick", onClick)
+	-- The game sends any quick second click here instead of to OnClick, whichever mouse button
+	-- it was (left then right counts too). Only two left clicks rename; anything else is a click.
+	tab:SetScript("OnDoubleClick", function(self, mouseButton)
+		if mouseButton == "LeftButton" then
+			ns.Widgets.CloseMenu()
+			startRename(self.index)
+		else
+			onClick(self, mouseButton)
+		end
 	end)
-	tab:SetScript("OnDoubleClick", function(self) startRename(self.index) end)
 	tab:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:SetText(self.text:GetText(), 1, 1, 1)
+		GameTooltip:SetText(self:GetText(), 1, 1, 1)
 		GameTooltip:AddLine("Double-click to rename. Right-click to rename, move or delete.", 0.8, 0.8, 0.8, true)
 		GameTooltip:AddLine("In game, scroll the mouse wheel while the wheel is open to switch wheels.", 0.5, 0.5, 0.5, true)
 		GameTooltip:Show()
@@ -893,48 +965,32 @@ end
 local function layoutTabs()
 	local wheels = ns.DB.Wheels()
 	local editing = ns.DB.EditIndex()
-	local x = LEFT
 	local box = ui.renameBox
+	local previous
 	for i, wheel in ipairs(wheels) do
 		local tab = wheelTab(i)
-		-- While renaming, size the tab to the name being typed: the box sits exactly over it,
-		-- and the tabs after it move along as the name grows.
+		-- While renaming, size the tab to the name being typed: the box sits over it, and the
+		-- tabs after it move along as the name grows. The tab's own label hides under the box.
 		local renaming = box:IsShown() and box.index == i
-		tab.text:SetText(renaming and box:GetText() or wheel.name)
-		-- The box is see-through; hide the tab's own label under it (still used for sizing).
+		tab:SetText(renaming and box:GetText() or wheel.name)
 		tab.text:SetAlpha(renaming and 0 or 1)
-		local text = tab.text
-		local textWidth = (text.GetUnboundedStringWidth and text:GetUnboundedStringWidth()) or text:GetStringWidth() or 0
-		local width = math.max(TAB_MIN_W, math.min(TAB_MAX_W, textWidth + 2 * TAB_PAD))
-		tab:SetWidth(width)
+		sizeTab(tab, renaming and RENAME_EXTRA_W or 0)
 		tab:ClearAllPoints()
-		tab:SetPoint("TOPLEFT", canvas, "TOPLEFT", x, TABS_Y)
+		if previous then
+			tab:SetPoint("BOTTOMLEFT", previous, "BOTTOMRIGHT", 0, 0)
+		else
+			tab:SetPoint("BOTTOMLEFT", canvas, "TOPLEFT", 8, -TAB_H)
+		end
 		styleTab(tab, i == editing)
 		tab:Show()
-		x = x + width + TAB_GAP
+		previous = tab
 	end
 	for i = #wheels + 1, #ui.tabs do
 		ui.tabs[i]:Hide()
 	end
 	ui.newWheel:ClearAllPoints()
-	ui.newWheel:SetPoint("TOPLEFT", canvas, "TOPLEFT", x, TABS_Y)
+	ui.newWheel:SetPoint("BOTTOMLEFT", previous, "BOTTOMRIGHT", 0, 0)
 	ui.newWheel:SetShown(#wheels < ns.MAX_WHEELS)
-	ui.tabHint:SetText(#wheels > 1
-		and "Scroll the mouse wheel while it's open to switch."
-		or "Add a wheel with +, then scroll while it's open to switch.")
-
-	-- "Reopen on last wheel" only means something with more than one wheel.
-	local several = #wheels > 1
-	ui.remember:SetShown(several)
-	ui.rememberLabel:SetShown(several)
-	ui.remember:SetChecked(ns.DB.Profile().rememberWheel)
-	ui.tabHint:ClearAllPoints()
-	ui.tabHint:SetPoint("LEFT", ui.newWheel, "RIGHT", 10, 0)
-	if several then
-		ui.tabHint:SetPoint("RIGHT", ui.remember, "LEFT", -10, 0)
-	else
-		ui.tabHint:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
-	end
 end
 
 -- Inline rename: an edit box laid over the tab. Enter or clicking away saves; Esc cancels.
@@ -946,49 +1002,46 @@ startRename = function(i)
 	local box = ui.renameBox
 	box.index, box.cancelled = i, false
 	box:ClearAllPoints()
-	box:SetAllPoints(tab)
-	box:SetText(wheel.name)
+	-- A selected top tab draws its label 4 below its centre (PanelTemplates_SelectTab); match it.
+	box:SetPoint("LEFT", tab, "LEFT", 8, -4)
+	box:SetPoint("RIGHT", tab, "RIGHT", -6, -4)
+	-- Widen the tab before focusing: an edit box that gets its text while too narrow scrolls to
+	-- the end ("eel 4") and doesn't scroll back once it's wide enough.
 	box:Show()
+	box:SetText(wheel.name)
+	layoutTabs()
+	box:SetCursorPosition(0)
 	box:SetFocus()
+	box:HighlightText()
+	-- Its new width only applies on the next frame; reset the scroll again then.
+	if C_Timer and C_Timer.After then
+		C_Timer.After(0, function()
+			if box:IsShown() and box.index == i then
+				box:SetCursorPosition(0)
+				box:HighlightText()
+			end
+		end)
+	end
 end
 
 local function buildTabs()
 	ui.tabs = {}
 
-	local line = canvas:CreateTexture(nil, "ARTWORK")
-	line:SetColorTexture(1, 1, 1, 0.12)
-	line:SetHeight(1)
-	line:SetPoint("TOPLEFT", canvas, "TOPLEFT", LEFT, TABS_Y - TAB_H)
-	line:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
-
 	ui.newWheel = createTab()
-	ui.newWheel:SetWidth(TAB_H + 6)
-	-- No side padding here: the tab is too narrow for it, and the "+" would be cut to "...".
-	ui.newWheel.text:ClearAllPoints()
-	ui.newWheel.text:SetPoint("CENTER", 0, 1)
-	ui.newWheel.text:SetFontObject(GameFontHighlightLarge)
-	ui.newWheel.text:SetText("+")
+	ui.newWheel:SetText("+")
+	sizeTab(ui.newWheel)
 	styleTab(ui.newWheel, false)
 	ui.newWheel:SetScript("OnClick", addWheel)
 	tooltip(ui.newWheel, "New wheel", ("Adds another wheel (up to %d). In game, scroll the mouse wheel while the wheel is open to move between them."):format(ns.MAX_WHEELS))
 
-	ui.tabHint = label(canvas, "", "GameFontDisableSmall")
-	ui.tabHint:SetWordWrap(false) -- anchored in layoutTabs
-
-	-- Same setting as Appearance > Reopen on last wheel used, kept next to the wheels it's about.
-	ui.rememberLabel = label(canvas, "Reopen on last wheel", "GameFontHighlightSmall")
-	ui.rememberLabel:SetPoint("RIGHT", canvas, "TOPRIGHT", -LEFT, TABS_Y - TAB_H / 2)
-	ui.remember = CreateFrame("CheckButton", nil, canvas, "UICheckButtonTemplate")
-	ui.remember:SetSize(22, 22)
-	ui.remember:SetPoint("RIGHT", ui.rememberLabel, "LEFT", -2, 0)
-	ui.remember:SetScript("OnClick", function(self)
-		ns.DB.Profile().rememberWheel = self:GetChecked() and true or false
-		ns.Changed()
-	end)
-	tooltip(ui.remember, "Reopen on last wheel",
-		"On: the wheel opens on whichever wheel you used last, even after a reload. Off: it always opens on the first wheel, so every direction stays the same.")
-
 	local box = ns.Widgets.Input(canvas, TAB_MIN_W, ns.WHEEL_NAME_MAX)
+	box:SetFontObject(GameFontHighlightSmall) -- the tab's font, so the tab's width fits the text
+	box:SetHeight(16)
+	-- The tab itself is the box's frame: drop the text box border art, which crowded its edges.
+	for _, key in ipairs({ "Left", "Middle", "Right" }) do
+		local t = ns.Widgets.Child(box, key)
+		if t then t:Hide() end
+	end
 	box:SetFrameLevel((canvas:GetFrameLevel() or 0) + 10) -- above the tabs
 	box:Hide()
 	box:SetScript("OnTextChanged", function(self)
@@ -1158,42 +1211,10 @@ end
 ---------------------------------------------------------------------------
 -- Build
 ---------------------------------------------------------------------------
+-- The window's top band, shown on every page: which profile this character uses.
 local function buildHeader()
-	local title = label(canvas, "Jest", "GameFontHighlightHuge")
-	title:SetPoint("TOPLEFT", LEFT, -16)
-	local version = label(canvas, addonVersion(), "GameFontDisableSmall")
-	version:SetPoint("BOTTOMLEFT", title, "BOTTOMRIGHT", 6, 2)
-	local sub = label(canvas, "Hold your wheel key, aim at a slice and release. Release in the centre or press Esc to cancel. Type /jest help for chat commands.", "GameFontHighlightSmall")
-	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-	sub:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
-
-	ui.appearance = button(canvas, "Appearance...", 110)
-	ui.appearance:SetPoint("TOPRIGHT", canvas, "TOPRIGHT", -30, -8) -- clear of the close button
-	ui.appearance:SetScript("OnClick", function() Panel.OpenAppearance() end)
-	tooltip(ui.appearance, "Appearance", "Ring radius, cancel zone, scale, sounds and which wheel opens first. Opens in the game's Settings.")
-
-	-- Profile dropdown: which named set of wheels this character uses.
-	local p = CreateFrame("Button", nil, canvas, "BackdropTemplate")
-	p:SetSize(220, 22)
-	p:SetPoint("RIGHT", ui.appearance, "LEFT", -34, 0) -- room for the "..." button
-	p:SetBackdrop(BOX_BACKDROP)
-	p:SetBackdropColor(0, 0, 0, 0.5)
-	p:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-	p.caption = label(p, "Profile", "GameFontDisableSmall")
-	p.caption:SetPoint("LEFT", 8, 0)
-	p.arrow = p:CreateTexture(nil, "ARTWORK")
-	p.arrow:SetSize(18, 18)
-	p.arrow:SetPoint("RIGHT", -2, 0)
-	p.arrow:SetTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-	p.arrow:SetTexCoord(0.2, 0.8, 0.2, 0.8)
-	p.text = label(p, "", "GameFontHighlightSmall")
-	p.text:SetPoint("LEFT", p.caption, "RIGHT", 6, 0)
-	p.text:SetPoint("RIGHT", p.arrow, "LEFT", -2, 0)
-	p.text:SetWordWrap(false)
-	local hover = p:CreateTexture(nil, "HIGHLIGHT")
-	hover:SetPoint("TOPLEFT", 1, -1)
-	hover:SetPoint("BOTTOMRIGHT", -1, 1)
-	hover:SetColorTexture(1, 1, 1, 0.06)
+	local p = ns.Widgets.Dropdown(window, 210)
+	p:SetPoint("TOPRIGHT", window, "TOPRIGHT", -46, -30)
 	p:SetScript("OnClick", function(self)
 		if ns.Widgets.MenuIsOpen() then
 			ns.Widgets.CloseMenu()
@@ -1201,23 +1222,16 @@ local function buildHeader()
 			Panel.OpenProfileMenu(self)
 		end
 	end)
-	tooltip(p, "Profile", "Your wheels and appearance settings. Each new character starts with its own profile. Pick another to switch, or make a new one. Profiles are shared across your account.")
+	tooltip(p, "Profile", "Your wheels and their look. Each new character starts with its own profile. Pick another to switch, or make a new one. Profiles are shared across your account.")
+	p.text = p.Text
 	ui.profile = p
 
+	local caption = label(window, "Profile", "GameFontNormal")
+	caption:SetPoint("RIGHT", p, "LEFT", -10, 0)
+
 	-- "...": rename, copy from or reset the profile in use.
-	local more = CreateFrame("Button", nil, canvas, "BackdropTemplate")
-	more:SetSize(24, 22)
-	more:SetPoint("LEFT", p, "RIGHT", 4, 0)
-	more:SetBackdrop(BOX_BACKDROP)
-	more:SetBackdropColor(0, 0, 0, 0.5)
-	more:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-	more.text = more:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	more.text:SetPoint("CENTER", 0, 3)
-	more.text:SetText("...")
-	local moreHover = more:CreateTexture(nil, "HIGHLIGHT")
-	moreHover:SetPoint("TOPLEFT", 1, -1)
-	moreHover:SetPoint("BOTTOMRIGHT", -1, 1)
-	moreHover:SetColorTexture(1, 1, 1, 0.08)
+	local more = button(window, "...", 32)
+	more:SetPoint("LEFT", p, "RIGHT", 6, 0)
 	more:SetScript("OnClick", function(self)
 		if ns.Widgets.MenuIsOpen() then
 			ns.Widgets.CloseMenu()
@@ -1229,33 +1243,32 @@ local function buildHeader()
 	ui.profileOptions = more
 end
 
-local function buildBindings()
-	local header = ns.Widgets.Header(canvas, "Key bindings")
-	header:SetPoint("TOPLEFT", LEFT, -84)
-
-	local wheelLabel = label(canvas, "Open wheel", "GameFontHighlight")
-	wheelLabel:SetPoint("TOPLEFT", LEFT, -112)
-	ui.bindWheel = createBindButton(canvas, BIND_WHEEL)
-	ui.bindWheel:SetPoint("LEFT", wheelLabel, "RIGHT", 10, 0)
-	local repeatLabel = label(canvas, "Repeat last", "GameFontHighlight")
-	repeatLabel:SetPoint("LEFT", ui.bindWheel, "RIGHT", 28, 0)
-	ui.bindRepeat = createBindButton(canvas, BIND_REPEAT)
-	ui.bindRepeat:SetPoint("LEFT", repeatLabel, "RIGHT", 10, 0)
-
-	local hint = label(canvas, "Click a button, then press a key. Right-click a button to clear it.", "GameFontDisableSmall")
-	hint:SetPoint("TOPLEFT", wheelLabel, "BOTTOMLEFT", 0, -12)
+-- An inset panel, as in the game's own windows (InsetFrameTemplate).
+local function inset(parent)
+	local f = CreateFrame("Frame", nil, parent, "InsetFrameTemplate")
+	return f
 end
 
 local function buildPreview()
-	ui.add = button(canvas, "Add slice", 90)
-	ui.add:SetPoint("TOPLEFT", LEFT, TABS_Y - TAB_H - 8)
-	ui.remove = button(canvas, "Remove", 80)
+	-- Left inset: the wheel preview. Right inset (buildEditor): the selected slice.
+	local left = inset(canvas)
+	left:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, -(TAB_H - 2))
+	left:SetPoint("BOTTOMLEFT", canvas, "BOTTOMLEFT", 0, 0)
+	left:SetWidth(LEFT_INSET_W)
+	ui.leftInset = left
+
+	ui.add = button(left, "Add slice", 96)
+	ui.add:SetPoint("TOPLEFT", left, "TOPLEFT", 14, -12)
+	ui.remove = button(left, "Remove", 96)
 	ui.remove:SetPoint("LEFT", ui.add, "RIGHT", 4, 0)
 	tooltip(ui.remove, "Remove", "Deletes the selected slice. The slices after it move up one place.")
 
 	ui.preview = ns.WheelView.Create(canvas, {
 		interactive = true,
 		labelFont = "GameFontHighlightSmall",
+		-- The in-game wheel's near-black segments vanish on the dark inset; use lighter slate here.
+		wedgeColor = { 0.30, 0.31, 0.36, 0.9 },
+		wedgeEmptyAlpha = 0.45,
 		onSlotCreated = function(slot)
 			slot:RegisterForClicks("LeftButtonUp")
 			slot:RegisterForDrag("LeftButton")
@@ -1306,8 +1319,8 @@ local function buildPreview()
 	ghost:Hide()
 	ui.ghost = ghost
 
-	local hint = label(canvas, "Click a slice to edit it, drag to rearrange. Slice 1 is at the top; the rest follow clockwise. Drop items, spells, mounts and more onto a slice, or into the centre to add one.", "GameFontDisableSmall")
-	hint:SetPoint("TOP", ui.preview.caption, "BOTTOM", 0, -6) -- below the name pill; same width as the wheel
+	local hint = label(left, "Click a slice to edit it, drag it to move it. Drop items, spells, mounts and more onto a slice, or into the centre to add one.", "GameFontDisableSmall")
+	hint:SetPoint("TOP", ui.preview.caption, "BOTTOM", 0, -8) -- below the name pill; same width as the wheel
 	hint:SetWidth(COLUMN_W)
 
 	ui.add:SetScript("OnClick", function()
@@ -1336,31 +1349,15 @@ local function buildPreview()
 end
 
 local function buildEmoteDropdown(card)
-	local b = CreateFrame("Button", nil, card, "BackdropTemplate")
-	b:SetHeight(22)
-	b:SetPoint("TOPLEFT", FIELD_X, -80)
-	b:SetPoint("RIGHT", card, "RIGHT", -12, 0)
-	b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-	b:SetBackdropColor(0, 0, 0, 0.5)
-	b:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-
-	b.arrow = b:CreateTexture(nil, "ARTWORK")
-	b.arrow:SetSize(18, 18)
-	b.arrow:SetPoint("RIGHT", -2, 0)
-	b.arrow:SetTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-	b.arrow:SetTexCoord(0.2, 0.8, 0.2, 0.8)
+	local b = ns.Widgets.Dropdown(card, 200)
+	b:SetPoint("TOPLEFT", FIELD_X + 4, -80)
+	b:SetPoint("RIGHT", card, "RIGHT", -16, 0)
 	b.badges = ns.Widgets.EmoteBadges(b)
-	b.badges:SetPoint("RIGHT", b.arrow, "LEFT", -4, 0)
+	b.badges:SetPoint("RIGHT", b.Arrow, "LEFT", -4, 2)
 	b.cmd = label(b, "", "GameFontDisableSmall")
 	b.cmd:SetPoint("RIGHT", b.badges, "LEFT", -6, 0)
-	b.text = label(b, "", "GameFontHighlight")
-	b.text:SetPoint("LEFT", 8, 0)
+	b.text = b.Text
 	b.text:SetPoint("RIGHT", b.cmd, "LEFT", -6, 0)
-	b.text:SetWordWrap(false)
-	local hover = b:CreateTexture(nil, "HIGHLIGHT")
-	hover:SetPoint("TOPLEFT", 1, -1)
-	hover:SetPoint("BOTTOMRIGHT", -1, 1)
-	hover:SetColorTexture(1, 1, 1, 0.06)
 
 	b:SetScript("OnClick", function()
 		if ns.EmoteMenu.IsOpen() then
@@ -1369,20 +1366,16 @@ local function buildEmoteDropdown(card)
 			openEmoteMenu()
 		end
 	end)
-	b:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(1, 0.82, 0, 1) end)
-	b:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1) end)
 	ui.emoteDropdown = b
 end
 
 -- Drop target for Action slices: shows what's there, takes whatever you drop on it.
 local function buildActionBox(card)
 	local b = CreateFrame("Button", nil, card, "BackdropTemplate")
-	b:SetHeight(38)
+	b:SetHeight(40)
 	b:SetPoint("TOPLEFT", FIELD_X, -78)
 	b:SetPoint("RIGHT", card, "RIGHT", -12, 0)
-	b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-	b:SetBackdropColor(0, 0, 0, 0.5)
-	b:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+	ns.Widgets.NativeBox(b)
 	b:RegisterForClicks("LeftButtonUp")
 
 	b.icon = b:CreateTexture(nil, "ARTWORK")
@@ -1404,15 +1397,18 @@ local function buildActionBox(card)
 	b:SetScript("OnClick", function()
 		if GetCursorInfo and GetCursorInfo() then dropFromCursor(selected) end
 	end)
-	tooltip(b, "Action", "Drag an item, spell, mount, toy, battle pet, macro or equipment set here. You can also drop onto any slice in the preview.")
+	tooltip(b, "Action", "Drag an item, spell, mount, toy, macro or equipment set here. You can also drop onto any slice in the preview.")
 	ui.actionBox = b
 end
 
 local function buildEditor()
-	local card = ns.Widgets.Card(canvas)
-	card:SetPoint("TOPLEFT", ui.add, "TOPLEFT", COLUMN_W + 20, 0)
-	card:SetPoint("RIGHT", canvas, "RIGHT", -LEFT, 0)
-	card:SetHeight(360) -- fits the worst case: macro box + three-line hint + label/icon + status
+	local right = inset(canvas)
+	right:SetPoint("TOPLEFT", ui.leftInset, "TOPRIGHT", 4, 0)
+	right:SetPoint("BOTTOMRIGHT", canvas, "BOTTOMRIGHT", 0, 0)
+	-- Everything below is laid out on `card`, the right inset's content area.
+	local card = CreateFrame("Frame", nil, right)
+	card:SetPoint("TOPLEFT", 6, -4)
+	card:SetPoint("BOTTOMRIGHT", -6, 4)
 	ui.card = card
 
 	ui.editorTitle = label(card, "", "GameFontNormalLarge")
@@ -1446,9 +1442,7 @@ local function buildEditor()
 	ui.multi:SetHeight(84)
 	ui.multi:SetPoint("TOPLEFT", FIELD_X, -80)
 	ui.multi:SetPoint("RIGHT", card, "RIGHT", -12, 0)
-	ui.multi:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-	ui.multi:SetBackdropColor(0, 0, 0, 0.5)
-	ui.multi:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+	ns.Widgets.NativeBox(ui.multi)
 	ui.multi:EnableMouse(true)
 	-- A multi-line EditBox grows with its text instead of clipping it, so it sits in a scroll
 	-- frame: the wheel scrolls it, and typing keeps the cursor in view.
@@ -1488,7 +1482,7 @@ local function buildEditor()
 	ui.multi:SetScript("OnMouseDown", function() ui.multiBox:SetFocus() end)
 	ui.multiBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 	ui.multiBox:SetScript("OnEditFocusGained", function() ui.multi:SetBackdropBorderColor(1, 0.82, 0, 1) end)
-	ui.multiBox:SetScript("OnEditFocusLost", function() ui.multi:SetBackdropBorderColor(0.4, 0.4, 0.4, 1) end)
+	ui.multiBox:SetScript("OnEditFocusLost", function() ui.multi:SetBackdropBorderColor(0.6, 0.6, 0.6, 1) end)
 	ui.multiBox:SetScript("OnTextChanged", function(self, userInput)
 		if userInput then
 			setDraftValue(self:GetText())
@@ -1596,7 +1590,6 @@ end
 local function build()
 	built = true
 	buildHeader()
-	buildBindings()
 	buildTabs()
 	buildPreview()
 	buildEditor()
@@ -1625,8 +1618,6 @@ function Panel.Refresh()
 	layoutTabs()
 	ui.add:SetEnabled(#list < ns.MAX_SLICES)
 	ui.remove:SetEnabled(#list > 1)
-	ui.bindWheel:Refresh()
-	ui.bindRepeat:Refresh()
 	ui.profile.text:SetText(ns.DB.ProfileName())
 	-- Reload the draft unless it holds unsaved edits for the slice still selected.
 	if draft.slice ~= list[selected] or not isDirty() then loadDraft() end
@@ -1665,63 +1656,7 @@ ns.OnVisualsStale(function()
 	if canvas:IsShown() and built and not drag then Panel.Refresh() end
 end)
 
-local function registerAppearance(parent)
-	local sub = Settings.RegisterVerticalLayoutSubcategory(parent, "Appearance")
-	local varType = Settings.VarType or {}
-
-	local function slider(key, name, step, fmt, tooltipText, round)
-		local minV, maxV = ns.Limits[key][1], ns.Limits[key][2]
-		local setting = Settings.RegisterProxySetting(sub, "JEST_" .. key:upper(), varType.Number or "number", name,
-			ns.Defaults.profile[key],
-			function() return ns.DB.Profile()[key] end,
-			function(v)
-				ns.DB.Profile()[key] = round(v)
-				ns.Changed()
-			end)
-		local options = Settings.CreateSliderOptions(minV, maxV, step)
-		if MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Label then
-			options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, fmt)
-		end
-		Settings.CreateSlider(sub, setting, options, tooltipText)
-	end
-
-	local function whole(v) return math.floor(v + 0.5) end
-	local function twentieths(v) return math.floor(v * 20 + 0.5) / 20 end
-
-	slider("radius", "Ring radius", 1, function(v) return ("%d"):format(v) end,
-		"Distance from the centre of the wheel to the slice icons.", whole)
-	slider("deadZone", "Cancel zone", 1, function(v) return ("%d"):format(v) end,
-		"Releasing the key within this distance of the centre cancels.", whole)
-	slider("scale", "Wheel scale", 0.05, function(v) return ("%.2f"):format(v) end,
-		"Overall size of the wheel.", twentieths)
-	slider("scrollSteps", "Scroll to switch wheels", 1, function(v) return ("%d notch%s"):format(v, v == 1 and "" or "es") end,
-		"With more than one wheel: how many notches of the mouse wheel it takes to switch to the next one. Higher is harder to do by accident.", whole)
-
-	local sounds = Settings.RegisterProxySetting(sub, "JEST_SOUNDS", varType.Boolean or "boolean", "Sounds",
-		ns.Defaults.profile.sounds,
-		function() return ns.DB.Profile().sounds end,
-		function(v) ns.DB.Profile().sounds = v end)
-	Settings.CreateCheckbox(sub, sounds, "Play sounds when hovering, firing and cancelling.")
-
-	local remember = Settings.RegisterProxySetting(sub, "JEST_REMEMBER_WHEEL", varType.Boolean or "boolean",
-		"Reopen on last wheel used", ns.Defaults.profile.rememberWheel,
-		function() return ns.DB.Profile().rememberWheel end,
-		function(v)
-			ns.DB.Profile().rememberWheel = v and true or false
-			ns.Changed()
-		end)
-	Settings.CreateCheckbox(sub, remember, "With more than one wheel: open on the wheel you used last. Off, it always opens on the first wheel, so directions stay the same every time.")
-
-	-- Account-wide, unlike the settings above (which belong to the profile).
-	local minimap = Settings.RegisterProxySetting(sub, "JEST_MINIMAP_BUTTON", varType.Boolean or "boolean",
-		"Minimap button", not ns.Defaults.minimap.hide,
-		function() return ns.MinimapButton.IsShown() end,
-		function(v) ns.MinimapButton.SetShown(v) end)
-	Settings.CreateCheckbox(sub, minimap, "Show the Jest button on the minimap edge. Click it to open the editor; drag it to move it. Applies to all characters.")
-	return sub
-end
-
--- Options > AddOns > Jest: a pointer to the editor window.
+-- Options > AddOns > Jest: a pointer to Jest's window.
 local launcher = CreateFrame("Frame")
 launcher:Hide()
 launcher.OnCommit = function() end
@@ -1732,7 +1667,7 @@ launcher:SetScript("OnShow", function(self)
 	self.built = true
 	local title = label(self, "Jest", "GameFontHighlightHuge")
 	title:SetPoint("TOPLEFT", LEFT, -16)
-	local text = label(self, "Jest's wheels are edited in their own window, so you can drag things from your bags and spellbook onto them. Type /jest to open it any time.", "GameFontHighlight")
+	local text = label(self, "Jest has its own window, so you can drag things from your bags and spellbook onto your wheels. Open it any time with /jest or the minimap button.", "GameFontHighlight")
 	text:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
 	text:SetPoint("RIGHT", self, "RIGHT", -LEFT, 0)
 	local open = button(self, "Open Jest", 140)
@@ -1743,32 +1678,21 @@ launcher:SetScript("OnShow", function(self)
 		if SettingsPanel and HideUIPanel then HideUIPanel(SettingsPanel) end
 		Panel.Open()
 	end)
-	local more = label(self, "Ring size, cancel zone, scale and sounds are under Appearance, below Jest in this list.", "GameFontDisableSmall")
-	more:SetPoint("TOPLEFT", open, "BOTTOMLEFT", 0, -16)
-	more:SetPoint("RIGHT", self, "RIGHT", -LEFT, 0)
 end)
-
-local function categoryID(cat)
-	return cat and (cat.GetID and cat:GetID() or cat.ID)
-end
 
 function Panel.Register()
 	if category then return end
 	if not (Settings and Settings.RegisterCanvasLayoutCategory) then
-		ns.Debug("Settings API unavailable; Appearance is only available through /jest commands")
+		ns.Debug("Settings API unavailable; open Jest with /jest")
 		return
 	end
 	category = Settings.RegisterCanvasLayoutCategory(launcher, "Jest")
-	local ok, sub = pcall(registerAppearance, category)
-	if ok then
-		appearanceCategory = sub
-	else
-		ns.Debug("Appearance page failed:", sub)
-	end
 	Settings.RegisterAddOnCategory(category)
 end
 
-function Panel.Open()
+-- Open the window, on `page` if given (otherwise where it was last).
+function Panel.Open(page)
+	if page or not currentPage then Panel.ShowPage(page or "wheels") end
 	window:Show()
 	window:Raise()
 end
@@ -1780,14 +1704,4 @@ function Panel.Toggle()
 	else
 		Panel.Open()
 	end
-end
-
-function Panel.OpenAppearance()
-	local id = categoryID(appearanceCategory) or categoryID(category)
-	if not id then
-		ns.Print("The Settings panel is unavailable; use /jest radius, deadzone, scale and sound.")
-		return
-	end
-	window:Hide()
-	Settings.OpenToCategory(id)
 end

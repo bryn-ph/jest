@@ -51,6 +51,13 @@ function Slices.Count(s)
 	end
 end
 
+-- start, duration, modRate of the slice's cooldown (items, toys, spells), or nil.
+function Slices.Cooldown(s)
+	if s and ns.Actions.IsAction(s.kind) and ns.Actions.Valid(s.kind, s.value) then
+		return ns.Actions.Cooldown(s.kind, s.value)
+	end
+end
+
 local function trim(s)
 	return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end

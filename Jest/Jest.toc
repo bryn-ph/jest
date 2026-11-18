@@ -32,5 +32,6 @@ Config\IconData.lua
 Config\IconPicker.lua
 Config\EmoteMenu.lua
 Config\Panel.lua
+Config\Options.lua
 Config\Slash.lua
 Config\MinimapButton.lua

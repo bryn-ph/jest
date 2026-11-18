@@ -1,6 +1,6 @@
 # Jest
 
-A radial wheel for **WoW: Forever**. Put anything on it: potions and food, spells, mounts, toys, battle pets, equipment sets, macros and emotes. Hold a key, flick the mouse toward a slice, release. Works in combat.
+A radial wheel for **WoW: Forever**. Put anything on it: potions and food, spells, mounts, toys,  equipment sets, macros and emotes. Hold a key, flick the mouse toward a slice, release. Works in combat.
 
 Use it as a quick-access menu for the things you don't want on your action bars, as an emote wheel for roleplay, or both, with a wheel for each.
 
@@ -9,8 +9,8 @@ Use it as a quick-access menu for the things you don't want on your action bars,
 ## Features
 
 - Hold-to-open wheel with up to 12 slices; release to fire, release in the centre to cancel.
-- Slices can be anything you can drag: items and consumables, spells, mounts, toys, battle pets, macros and equipment sets. Or any of the game's emotes, or your own macro text (use `/e` for a custom emote line).
-- Drag things straight from your bags, spellbook or collections onto the wheel in the options. Item slices show how many you have left.
+- Slices can be anything you can drag: items and consumables, spells, mounts, toys,  macros and equipment sets. Or any of the game's emotes, or your own macro text (use `/e` for a custom emote line).
+- Drag things straight from your bags, spellbook or collections onto the wheel in the options. Item slices show how many you have left, and items and spells show their cooldowns.
 - Optional extra wheels (up to 5): scroll the mouse wheel while it's open to flip between them, e.g. consumables on one, mounts on another, emotes on a third.
 - Emotes are tagged **Anim** and/or **Voice** for your character, with filters to find them.
 - Number keys fire slices while the wheel is open; a second key repeats the last one.
@@ -21,7 +21,7 @@ Use it as a quick-access menu for the things you don't want on your action bars,
 
 ## Usage
 
-1. Type `/jest` or click the minimap button to open Jest's window (also under *Options → AddOns → Jest*), and set the **Open wheel** key.
+1. Type `/jest` or click the minimap button to open Jest's window (also under *Options → AddOns → Jest*). On its **Options** tab, set the **Open wheel** key.
 2. Hold the key, move the mouse toward a slice, and release.
 
 | While the wheel is open | |
@@ -30,7 +30,7 @@ Use it as a quick-access menu for the things you don't want on your action bars,
 | `1`–`9`, `0` | Fire that slice |
 | Mouse wheel | Switch to the next or previous wheel (with more than one) |
 
-To add a wheel, click **+** next to the wheel tabs in the options. Double-click a tab to rename it, or right-click it to rename, reorder or delete it. By default the wheel always opens on the first wheel, so directions stay the same; *Appearance → Reopen on last wheel used* changes that.
+To add a wheel, click the **+** tab on the **Wheels** tab. Double-click a wheel's tab to rename it, or right-click it to rename, reorder or delete it. By default the wheel always opens on the first wheel, so directions stay the same; *Options → Reopen on the last wheel used* changes that.
 
 Changes made in combat apply when combat ends. `/jest help` lists the slash commands.
 

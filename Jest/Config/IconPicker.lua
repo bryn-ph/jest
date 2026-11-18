@@ -254,31 +254,9 @@ end
 
 local function create()
 	local gridW = COLS * (SIZE + GAP) - GAP
-	frame = CreateFrame("Frame", "JestIconPicker", UIParent, "BackdropTemplate")
-	frame:SetSize(gridW + SCROLL_GAP + SCROLL_W + 2 * PAD, -GRID_TOP + ROWS * (SIZE + GAP) + 64)
+	frame = ns.Widgets.NativeWindow("JestIconPicker", "Choose an icon",
+		gridW + SCROLL_GAP + SCROLL_W + 2 * PAD, -GRID_TOP + ROWS * (SIZE + GAP) + 64, { inset = false })
 	frame:SetFrameStrata("FULLSCREEN_DIALOG")
-	frame:SetToplevel(true)
-	frame:SetClampedToScreen(true)
-	frame:EnableMouse(true)
-	frame:SetMovable(true)
-	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart", frame.StartMoving)
-	frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-	frame:SetBackdrop({
-		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-		tile = true, tileSize = 32, edgeSize = 32,
-		insets = { left = 11, right = 12, top = 12, bottom = 11 },
-	})
-	frame:Hide()
-	table.insert(UISpecialFrames, "JestIconPicker") -- Esc closes it
-
-	local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOP", 0, -18)
-	title:SetText("Choose an icon")
-
-	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-	close:SetPoint("TOPRIGHT", -6, -6)
 
 	local fullW = gridW + SCROLL_GAP + SCROLL_W
 	searchBox = ns.Widgets.Input(frame, fullW)

@@ -9,7 +9,7 @@ ns.SecureWheel = SW
 local btn, anchor
 local pending = false
 -- [button name, e.g. "w2s3"] = function, run by the custom "jest" action type for slices that
--- have no secure action type of their own (emotes, battle pets).
+-- have no secure action type of their own (emotes, battle pets, mounts).
 local runners = {}
 -- Copy of the wheels as last applied. The in-game wheel draws from this rather than the DB, so
 -- what it shows always matches what the secure button will fire, even when edits made in

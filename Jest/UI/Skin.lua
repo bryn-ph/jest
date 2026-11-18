@@ -45,7 +45,7 @@ end
 ---------------------------------------------------------------------------
 -- Frames
 ---------------------------------------------------------------------------
-local view = ns.WheelView.Create(UIParent, { name = "JestSkin" })
+local view = ns.WheelView.Create(UIParent, { name = "JestSkin", cooldowns = true })
 local frame = view.frame
 frame:SetFrameStrata("FULLSCREEN_DIALOG")
 frame:SetClampedToScreen(true)
@@ -159,6 +159,7 @@ local function refreshSlots()
 		view.slots[i].locked = lockdown and ns.Slices.IsEmote(slices[i]) or false
 	end
 	view:RefreshContent(slices)
+	view:RefreshCooldowns(slices)
 end
 
 -- Lay out wheel p (clamped to the wheels that exist).
@@ -230,6 +231,13 @@ function Skin.Rebuild()
 	showWheel(page)
 	hovered = nil
 end
+
+-- Cooldowns that start or end while the wheel is open (e.g. the global cooldown after a cast).
+local function refreshCooldowns()
+	if isOpen then view:RefreshCooldowns(pageSlices()) end
+end
+ns.On("SPELL_UPDATE_COOLDOWN", refreshCooldowns)
+ns.On("BAG_UPDATE_COOLDOWN", refreshCooldowns)
 
 ns.OnVisualsStale(function()
 	if view.n > 0 then
