@@ -19,35 +19,123 @@ end
 -- Single-line text input. A plain EditBox rather than InputBoxTemplate, whose edit boxes
 -- ignore Backspace on WoW: Forever. Use HookScript (not SetScript) for focus handlers so the
 -- focus styling below is kept.
+-- Drawn with the game's own input-box border (InputBoxVisualTemplate: textures only, no scripts
+-- or mixin), so it looks like any other WoW text box.
 function Widgets.Input(parent, width, maxLetters)
-	local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-	box:SetSize(width, 22)
-	box:SetBackdrop(BACKDROP)
-	box:SetBackdropColor(0, 0, 0, 0.5)
-	setBorder(box, BORDER)
+	local box = CreateFrame("EditBox", nil, parent, "InputBoxVisualTemplate")
+	box:SetSize(width, 20)
 	box:SetFontObject(ChatFontNormal)
-	box:SetTextInsets(6, 6, 0, 0)
+	box:SetTextInsets(2, 6, 0, 0)
 	box:SetAutoFocus(false)
 	if maxLetters then
 		box:SetMaxLetters(maxLetters)
 	end
 	box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-	box:SetScript("OnEditFocusGained", function(self)
-		setBorder(self, BORDER_FOCUS)
-		self:HighlightText()
-	end)
-	box:SetScript("OnEditFocusLost", function(self)
-		setBorder(self, BORDER)
-		self:HighlightText(0, 0)
-	end)
+	box:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+	box:SetScript("OnEditFocusLost", function(self) self:HighlightText(0, 0) end)
 	return box
+end
+
+-- A dark box with the tooltip-style border the game uses for panels like the macro editor.
+function Widgets.NativeBox(frame)
+	frame:SetBackdrop({
+		bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		tile = true, tileSize = 16, edgeSize = 14,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+	frame:SetBackdropColor(0, 0, 0, 0.6)
+	frame:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+end
+
+-- A button drawn like the game's dropdowns (WowStyle1DropdownTemplate's art). b.Text holds the
+-- shown value; the caller sets OnClick (usually to open a Widgets.ShowMenu list).
+function Widgets.Dropdown(parent, width)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetSize(width, 25)
+	b.Background = b:CreateTexture(nil, "BACKGROUND")
+	b.Background:SetAtlas("common-dropdown-textholder")
+	b.Background:SetPoint("TOPLEFT", -8, 7)
+	b.Background:SetPoint("BOTTOMRIGHT", 8, -9)
+	b.Arrow = b:CreateTexture(nil, "ARTWORK")
+	b.Arrow:SetAtlas("common-dropdown-a-button", true)
+	b.Arrow:SetPoint("RIGHT", 1, -3)
+	b.Text = b:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+	b.Text:SetPoint("LEFT", 8, -1)
+	b.Text:SetPoint("RIGHT", b.Arrow, "LEFT", -2, 0)
+	b.Text:SetJustifyH("LEFT")
+	b.Text:SetWordWrap(false)
+	b:SetScript("OnEnter", function(self) self.Arrow:SetAtlas("common-dropdown-a-button-hover", true) end)
+	b:SetScript("OnLeave", function(self) self.Arrow:SetAtlas("common-dropdown-a-button", true) end)
+	b:SetScript("OnMouseDown", function(self) self.Arrow:SetAtlas("common-dropdown-a-button-pressedhover", true) end)
+	b:SetScript("OnMouseUp", function(self) self.Arrow:SetAtlas("common-dropdown-a-button-hover", true) end)
+	return b
+end
+
+-- A labelled checkbox (UICheckButtonTemplate). get() reads the value, set(on) stores it;
+-- check:Refresh() re-reads it.
+function Widgets.Check(parent, text, tooltipText, get, set)
+	local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+	check:SetSize(26, 26)
+	check.label = check:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+	check.label:SetPoint("LEFT", check, "RIGHT", 2, 1)
+	check.label:SetText(text)
+	check:SetScript("OnClick", function(self) set(self:GetChecked() and true or false) end)
+	check:SetScript("OnEnter", function(self)
+		if not tooltipText then return end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText(text, 1, 1, 1)
+		GameTooltip:AddLine(tooltipText, nil, nil, nil, true)
+		GameTooltip:Show()
+	end)
+	check:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	function check:Refresh() self:SetChecked(get() and true or false) end
+	check.set = set -- internal; used by the tests
+	return check
+end
+
+-- A labelled slider with steppers, like the game's Settings (MinimalSliderWithSteppersTemplate).
+-- format(value) is the text shown on its right. get() reads, set(value) stores (already rounded
+-- to the step); slider:Refresh() re-reads.
+function Widgets.Slider(parent, text, minValue, maxValue, step, format, get, set)
+	local holder = CreateFrame("Frame", nil, parent)
+	holder:SetSize(420, 26)
+	holder.label = holder:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+	holder.label:SetPoint("LEFT")
+	holder.label:SetWidth(170)
+	holder.label:SetJustifyH("LEFT")
+	holder.label:SetText(text)
+	local slider = CreateFrame("Frame", nil, holder, "MinimalSliderWithSteppersTemplate")
+	slider:SetPoint("LEFT", holder.label, "RIGHT", 4, 0)
+	slider:SetSize(240, 26)
+	holder.slider = slider
+
+	local function round(v)
+		return math.floor((v - minValue) / step + 0.5) * step + minValue
+	end
+	holder.set = function(v) set(round(v)) end -- internal; used by the tests
+	local formatters = {}
+	if MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Label then
+		formatters[MinimalSliderWithSteppersMixin.Label.Right] = function(v) return format(round(v)) end
+	end
+	function holder:Refresh()
+		self.refreshing = true
+		slider:Init(get(), minValue, maxValue, (maxValue - minValue) / step, formatters)
+		self.refreshing = false
+	end
+	if slider.RegisterCallback and MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Event then
+		slider:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, v)
+			if not holder.refreshing then holder.set(v) end
+		end, holder)
+	end
+	return holder
 end
 
 -- Grey hint text shown inside an input while it's empty.
 function Widgets.SetPlaceholder(box, text)
 	if not box.placeholder then
 		local fs = box:CreateFontString(nil, "ARTWORK", "GameFontDisable")
-		fs:SetPoint("LEFT", 6, 0)
+		fs:SetPoint("LEFT", 2, 0)
 		fs:SetPoint("RIGHT", -6, 0)
 		fs:SetJustifyH("LEFT")
 		fs:SetWordWrap(false)
@@ -370,29 +458,63 @@ end
 -- to close, or a message to show while staying open (e.g. "That name is taken").
 local prompt
 
+-- Title shown in a native window's title bar.
+-- A template's child (parentKey), or nil when it doesn't exist.
+local function child(frame, key)
+	local v = rawget(frame, key)
+	return type(v) == "table" and v or nil
+end
+Widgets.Child = child
+
+function Widgets.SetTitle(frame, text)
+	local container = child(frame, "TitleContainer")
+	if frame.SetTitle then
+		frame:SetTitle(text)
+	elseif container and child(container, "TitleText") then
+		container.TitleText:SetText(text)
+	end
+end
+
+-- A standard game window (ButtonFrameTemplate): title bar, close button, rock background.
+-- opts.portrait = texture shows it in the portrait circle (otherwise there's none);
+-- opts.inset = false hides the inset panel. Movable by dragging; Esc closes it.
+function Widgets.NativeWindow(name, title, width, height, opts)
+	opts = opts or {}
+	local f = CreateFrame("Frame", name, UIParent, "ButtonFrameTemplate")
+	f:SetSize(width, height)
+	f:SetToplevel(true)
+	f:SetClampedToScreen(true)
+	f:EnableMouse(true)
+	f:SetMovable(true)
+	f:RegisterForDrag("LeftButton")
+	f:SetScript("OnDragStart", f.StartMoving)
+	f:SetScript("OnDragStop", f.StopMovingOrSizing)
+	if ButtonFrameTemplate_HideButtonBar then ButtonFrameTemplate_HideButtonBar(f) end
+	if opts.portrait then
+		local container = child(f, "PortraitContainer")
+		local portrait = container and child(container, "portrait")
+		if portrait then portrait:SetTexture(opts.portrait) end
+	elseif ButtonFrameTemplate_HidePortrait then
+		ButtonFrameTemplate_HidePortrait(f)
+	end
+	local inset = child(f, "Inset")
+	if opts.inset == false and inset then inset:Hide() end
+	Widgets.SetTitle(f, title)
+	f:Hide()
+	table.insert(UISpecialFrames, name) -- Esc closes it
+	return f
+end
+
 local function createPrompt()
-	prompt = CreateFrame("Frame", "JestPrompt", UIParent, "BackdropTemplate")
-	prompt:SetSize(300, 128)
+	prompt = Widgets.NativeWindow("JestPrompt", "", 320, 132, { inset = false })
 	prompt:SetPoint("CENTER", 0, 120)
 	prompt:SetFrameStrata("FULLSCREEN_DIALOG")
-	prompt:SetToplevel(true)
-	prompt:EnableMouse(true)
-	prompt:SetBackdrop({
-		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-		tile = true, tileSize = 32, edgeSize = 32,
-		insets = { left = 11, right = 12, top = 12, bottom = 11 },
-	})
-	prompt:Hide()
-	table.insert(UISpecialFrames, "JestPrompt") -- Esc closes it
 
-	prompt.title = prompt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	prompt.title:SetPoint("TOP", 0, -18)
-	prompt.box = Widgets.Input(prompt, 256)
-	prompt.box:SetPoint("TOP", 0, -42)
+	prompt.box = Widgets.Input(prompt, 260)
+	prompt.box:SetPoint("TOP", 2, -42)
 	prompt.error = prompt:CreateFontString(nil, "OVERLAY", "GameFontRedSmall")
-	prompt.error:SetPoint("TOP", prompt.box, "BOTTOM", 0, -5)
-	prompt.error:SetWidth(256)
+	prompt.error:SetPoint("TOP", prompt.box, "BOTTOM", 0, -6)
+	prompt.error:SetWidth(270)
 
 	local ok = CreateFrame("Button", nil, prompt, "UIPanelButtonTemplate")
 	ok:SetSize(90, 22)
@@ -424,7 +546,7 @@ end
 
 function Widgets.Prompt(title, text, onAccept)
 	if not prompt then createPrompt() end
-	prompt.title:SetText(title)
+	Widgets.SetTitle(prompt, title)
 	prompt.error:SetText("")
 	prompt.onAccept = onAccept
 	prompt.box:SetText(text or "")

@@ -3,12 +3,15 @@
 -- options panel, so the two always look the same.
 --
 --   local view = ns.WheelView.Create(parent, { name = ..., interactive = bool,
---                                              labelFont = ..., onSlotCreated = fn(slot, i) })
+--                                              labelFont = ..., onSlotCreated = fn(slot, i),
+--                                              wedgeColor = {r, g, b, a}, wedgeEmptyAlpha = a,
+--                                              cooldowns = bool })
 --   view:Layout(slices, { radius =, deadZone =, iconSize =, centreIconSize = })
 --   view:SetHighlight(i)  -- gold segment eases to slice i (nil fades it out)
 --   view:SetEmphasis(i)   -- slice i's icon grows (nil = none)
 --   view:SetSlotPosition(i, p)  -- slide slice i's icon round the ring to position p (nil = home)
 --   view:SetCentre(texture, text, dim)  -- centre icon, plus the name in the pill under the ring
+--   view:RefreshCooldowns(slices)  -- cooldown swipes and timers (cooldowns = true only)
 --   view:Update(elapsed)  -- call every frame while shown, drives the easing
 local addonName, ns = ...
 
@@ -186,12 +189,30 @@ function ViewMixin:GetSlot(i)
 		hover:SetAllPoints(s.icon)
 	end
 
+	-- Cooldown swipe and timer, round to match the icon. Only the in-game wheel shows them.
+	local textParent = s
+	if self.opts.cooldowns then
+		s.cooldown = CreateFrame("Cooldown", nil, s, "CooldownFrameTemplate")
+		s.cooldown:SetAllPoints(s.icon)
+		if s.cooldown.SetSwipeTexture then s.cooldown:SetSwipeTexture(MASK) end
+		if s.cooldown.SetSwipeColor then s.cooldown:SetSwipeColor(0, 0, 0, 0.7) end
+		if s.cooldown.SetUseCircularEdge then s.cooldown:SetUseCircularEdge(true) end
+		if s.cooldown.SetDrawEdge then s.cooldown:SetDrawEdge(false) end
+		if s.cooldown.SetDrawBling then s.cooldown:SetDrawBling(false) end
+		-- Show the seconds left even if the game's "show cooldown numbers" option is off.
+		if s.cooldown.SetHideCountdownNumbers then s.cooldown:SetHideCountdownNumbers(false) end
+		-- Key number and count go on a layer above the swipe.
+		textParent = CreateFrame("Frame", nil, s)
+		textParent:SetAllPoints()
+		textParent:SetFrameLevel((s.cooldown:GetFrameLevel() or 0) + 1)
+	end
+
 	-- Quick-use key number, centred on the icon's top edge (the item count has the bottom right).
-	s.key = s:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+	s.key = textParent:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
 	s.key:SetPoint("CENTER", s, "TOP", 0, 0)
 	local font, size, flags = s.key:GetFont()
 	if font and size then s.key:SetFont(font, size * KEY_FONT_SCALE, flags) end
-	s.count = s:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+	s.count = textParent:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
 	s.count:SetPoint("BOTTOMRIGHT", 3, -3)
 
 	s.scale, s.target, s.x, s.y = 1, 1, 0, 0
@@ -248,7 +269,8 @@ function ViewMixin:Layout(slices, o)
 			w:SetSize(texSize, texSize)
 			rotateClockwise(w, ns.Geometry.SliceAngle(i, n))
 			local empty = not ns.Slices.HasAction(slices[i])
-			w:SetVertexColor(WEDGE_COLOR[1], WEDGE_COLOR[2], WEDGE_COLOR[3], empty and WEDGE_EMPTY_ALPHA or WEDGE_COLOR[4])
+			local c = self.opts.wedgeColor or WEDGE_COLOR
+			w:SetVertexColor(c[1], c[2], c[3], empty and (self.opts.wedgeEmptyAlpha or WEDGE_EMPTY_ALPHA) or c[4])
 			w:Show()
 		end
 	end
@@ -298,6 +320,21 @@ function ViewMixin:RefreshContent(slices)
 			s.outOfStock = count == 0
 			s.icon:SetAlpha(s.empty and 0.35 or 1)
 			s.icon:SetDesaturated(s.outOfStock or s.locked or false)
+		end
+	end
+end
+
+-- Cooldown swipes and timers (views created with cooldowns = true). The values may be secret
+-- in combat: they go straight to the Cooldown frame, untested, and any error just clears it.
+function ViewMixin:RefreshCooldowns(slices)
+	if not self.opts.cooldowns then return end
+	for i = 1, self.n do
+		local s = self.slots[i]
+		if s and s.cooldown then
+			local start, duration, modRate = ns.Slices.Cooldown(slices[i])
+			if not pcall(s.cooldown.SetCooldown, s.cooldown, start, duration, modRate) then
+				s.cooldown:Clear()
+			end
 		end
 	end
 end

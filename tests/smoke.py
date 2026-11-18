@@ -74,8 +74,21 @@ C_Item = {
   RequestLoadItemDataByID = function(id) __requested = id end,
 }
 PlayerHasToy = function(id) return __items[id] and __items[id].toy or false end
-C_Spell = { GetSpellInfo = function(id) if id == 2061 then return { name = 'Flash Heal', iconID = 135907 } end end }
-C_MountJournal = { GetMountInfoByID = function(id) if id == 6 then return 'Brown Horse', 458, 132226 end end }
+C_Spell = {
+  GetSpellInfo = function(id)
+    if id == 2061 then return { name = 'Flash Heal', iconID = 135907 } end
+    if id == 458 then return { name = 'Brown Horse Spell', iconID = 132226 } end
+  end,
+  GetSpellCooldown = function(id) if id == 2061 then return { startTime = 100, duration = 8, isEnabled = true, modRate = 1 } end end,
+}
+C_Container = C_Container or {}
+C_Container.GetItemCooldown = function(id) if id == 5512 then return 50, 60, 1 end return 0, 0, 1 end
+C_MountJournal = {
+  GetMountInfoByID = function(id) if id == 6 then return 'Brown Horse', 458, 132226, __mountActive == 6 end end,
+  GetMountFromSpell = function(spellID) if spellID == 458 then return 6 end end,
+  SummonByID = function(id) __mountActive = id end,
+  Dismiss = function() __mountActive = nil end,
+}
 C_PetJournal = {
   GetPetInfoByPetID = function(g) return 1, nil, 1, 0, 0, 0, false, 'Mechanical Squirrel', 132599 end,
   SummonPetByGUID = function(g) __summoned = g end,
@@ -254,8 +267,25 @@ SettingsPanel = newObj('SettingsPanel'); HideUIPanel = function(f) f:Hide() end
 __canvas:Show(); __canvas.__scripts.OnShow(__canvas)
 __canvas.openButton:Click()
 check(JestEditor.__shown and not SettingsPanel.__shown, 'launcher closes Settings and opens the editor')
-ui.appearance:Click()
-check(__opened == 43 and not JestEditor.__shown, 'Appearance... opens the Settings subcategory')
+check(__opened == nil, 'Settings has only the launcher page now')
+
+-- bottom tabs: Wheels and Options
+check(ns.Panel.CurrentPage() == 'wheels' and ns.Panel._canvas.__shown, 'opens on the Wheels page')
+JestEditorTab2:Click()
+check(ns.Panel.CurrentPage() == 'options' and not ns.Panel._canvas.__shown and ns.Options._page.__shown, 'the Options tab switches pages')
+ns.Options._page.__scripts.OnShow(ns.Options._page)
+local opt = ns.Options._ui
+check(opt.bindWheel and opt.bindRepeat and opt.radius and opt.scrollSteps and opt.minimap, 'Options has bindings, sliders and checkboxes')
+opt.radius.set(150)
+check(ns.DB.Profile().radius == 150, 'the radius slider saves')
+opt.scale.set(1.234)
+check(ns.DB.Profile().scale == 1.25 and btn.__attrs.deadzone == ns.DB.Profile().deadZone * 1.25, 'the scale slider rounds to its step and applies')
+opt.radius.set(110); opt.scale.set(1)
+opt.sounds.set(false)
+check(ns.DB.Profile().sounds == false, 'the sounds checkbox saves')
+opt.sounds.set(true)
+JestEditorTab1:Click()
+check(ns.Panel.CurrentPage() == 'wheels' and ns.Panel._canvas.__shown, 'back to Wheels')
 JestEditor:Show()
 check(ui.editorTitle:GetText() == 'Slice 1', 'editor shows slice 1')
 check(ui.emoteDropdown.__shown and not ui.multi.__shown, 'emote slices use the dropdown')
@@ -443,30 +473,30 @@ check(#ns.DB.Wheel().slices == 8, 'remove slice')
 
 -- keybind capture
 -- regression: an idle capture button must not be keyboard-enabled (it swallowed Backspace)
-check(not ui.bindWheel.__scripts.OnKeyDown and not ui.bindWheel.__kb, 'idle bind button has no key handler')
-check(not ui.bindRepeat.__scripts.OnKeyDown and not ui.bindRepeat.__kb, 'idle repeat button has no key handler')
-ui.bindWheel:Click('LeftButton')
-check(ui.bindWheel.capturing, 'capturing')
+check(not opt.bindWheel.__scripts.OnKeyDown and not opt.bindWheel.__kb, 'idle bind button has no key handler')
+check(not opt.bindRepeat.__scripts.OnKeyDown and not opt.bindRepeat.__kb, 'idle repeat button has no key handler')
+opt.bindWheel:Click('LeftButton')
+check(opt.bindWheel.capturing, 'capturing')
 __ctrl = true
-ui.bindWheel.__scripts.OnKeyDown(ui.bindWheel, 'LCTRL')
-check(ui.bindWheel.capturing, 'modifier alone ignored')
-ui.bindWheel.__scripts.OnKeyDown(ui.bindWheel, 'Q')
+opt.bindWheel.__scripts.OnKeyDown(opt.bindWheel, 'LCTRL')
+check(opt.bindWheel.capturing, 'modifier alone ignored')
+opt.bindWheel.__scripts.OnKeyDown(opt.bindWheel, 'Q')
 __ctrl = false
 check(__binds['CTRL-Q'] == 'CLICK JestWheelButton:LeftButton', 'CTRL-Q bound')
-ui.bindWheel:Click('LeftButton'); ui.bindWheel:Click('Button4')
+opt.bindWheel:Click('LeftButton'); opt.bindWheel:Click('Button4')
 check(__binds['BUTTON4'] == 'CLICK JestWheelButton:LeftButton' and __binds['CTRL-Q'] == nil, 'rebinding to BUTTON4 clears old key')
-ui.bindWheel:Click('RightButton')
+opt.bindWheel:Click('RightButton')
 check(GetBindingKey('CLICK JestWheelButton:LeftButton') == nil, 'right-click clears')
-check(not ui.bindWheel.__scripts.OnKeyDown and not ui.bindWheel.__kb, 'key handler removed after capture')
+check(not opt.bindWheel.__scripts.OnKeyDown and not opt.bindWheel.__kb, 'key handler removed after capture')
 
--- appearance proxy settings
-__settings.JEST_RADIUS.set(150.4)
-check(ns.DB.Profile().radius == 150, 'radius proxy rounds')
-__settings.JEST_SCALE.set(1.23)
+-- Options page settings (were Settings > Appearance)
+opt.radius.set(150.4)
+check(ns.DB.Profile().radius == 150, 'radius slider rounds')
+opt.scale.set(1.23)
 check(math.abs(ns.DB.Profile().scale - 1.25) < 1e-9, 'scale rounds to .05')
 check(btn.__attrs.deadzone == ns.DB.Profile().deadZone * 1.25, 'deadzone attr follows scale')
-__settings.JEST_SOUNDS.set(false)
-check(ns.DB.Profile().sounds == false, 'sounds proxy')
+opt.sounds.set(false)
+check(ns.DB.Profile().sounds == false, 'sounds checkbox')
 
 -- combat: save queues
 InCombatLockdown = function() return true end
@@ -742,6 +772,13 @@ __cursor = { 'spell', 1, 'spell', 2061 }
 ui.centreDrop.__scripts.OnReceiveDrag(ui.centreDrop)
 check(#list() == n0 + 1 and list()[n0 + 1].kind == 'spell', 'drop in the centre adds a slice')
 check(btn.__attrs['type-w1s' .. (n0 + 1)] == 'spell' and btn.__attrs['spell-w1s' .. (n0 + 1)] == 2061, 'spell: secure spell attributes')
+do
+  local st, d, m = ns.Slices.Cooldown(list()[n0 + 1])
+  check(st == 100 and d == 8 and m == 1, 'spell cooldown read for the wheel')
+  st, d = ns.Slices.Cooldown({ kind = 'item', value = 5512 })
+  check(st == 50 and d == 60, 'item cooldown read for the wheel')
+  check(ns.Slices.Cooldown({ kind = 'emote', value = 'WAVE' }) == nil, 'emotes have no cooldown')
+end
 check(pv.slots[n0 + 1].label == 'Flash Heal', 'spell name on the wheel')
 ui.undo:Click()
 check(#list() == n0, 'undo removes an added slice')
@@ -749,7 +786,20 @@ check(#list() == n0, 'undo removes an added slice')
 __cursor = { 'mount', 6 }
 pv.slots[3].__scripts.OnClick(pv.slots[3])
 check(list()[3].kind == 'mount', 'clicking a slice while holding something drops it')
-check(btn.__attrs['type-w1s3'] == 'spell' and btn.__attrs['spell-w1s3'] == 458, 'mount casts its summon spell')
+check(btn.__attrs['type-w1s3'] == 'jest', 'mount uses the insecure runner')
+btn:jest(nil, 'w1s3')
+check(__mountActive == 6, 'mount summoned through the journal when fired')
+btn:jest(nil, 'w1s3')
+check(__mountActive == nil, 'firing the mount you are on dismounts')
+ui.kind.macro:Click()
+check(ui.multiBox:GetText() == '/cast Brown Horse Spell', 'action -> macro uses the mount spell name')
+ui.revert:Click()
+__cursor = { 'spell', 1, 'spell', 458 }
+pv.slots[3].__scripts.OnReceiveDrag(pv.slots[3])
+check(list()[3].kind == 'spell' and btn.__attrs['type-w1s3'] == 'jest', 'a mount spell from the spellbook summons like the mount')
+btn:jest(nil, 'w1s3')
+check(__mountActive == 6, 'mount spell summons through the journal')
+__mountActive = nil
 
 __cursor = { 'battlepet', 'BattlePet-0-00000ABCDEF0' }
 ui.actionBox.__scripts.OnReceiveDrag(ui.actionBox)
@@ -823,13 +873,17 @@ check(#ns.DB.Wheels() == 2 and ns.DB.EditIndex() == 2, '+ adds a wheel and edits
 check(ui.renameBox.__shown and ui.renameBox:GetText() == 'Wheel 2', 'new wheel opens the rename box')
 ui.renameBox:SetText('  Potions  ')
 ui.renameBox.__scripts.OnTextChanged(ui.renameBox)
-check(ui.tabs[2].text:GetText() == '  Potions  ' and ui.tabs[2].text.__alpha == 0, 'the tab sizes to the name being typed, its own label hidden under the box')
+check(ui.tabs[2]:GetText() == '  Potions  ' and ui.tabs[2].text.__alpha == 0, 'the tab sizes to the name being typed, its own label hidden under the box')
 ui.renameBox.__scripts.OnEnterPressed(ui.renameBox)
 ui.renameBox.__scripts.OnEditFocusLost(ui.renameBox) -- the mock's ClearFocus doesn't fire it
-check(ns.DB.Wheel(2).name == 'Potions' and ui.tabs[2].text:GetText() == 'Potions' and ui.tabs[2].text.__alpha == 1, 'rename trims, saves and shows on the tab')
+check(ns.DB.Wheel(2).name == 'Potions' and ui.tabs[2]:GetText() == 'Potions' and ui.tabs[2].text.__alpha == 1, 'rename trims, saves and shows on the tab')
 check(#list() == 4 and not ns.Slices.HasAction(list()[1]), 'a new wheel has 4 empty slices')
 check(btn.__attrs.wheels == 2 and btn.__attrs.slices2 == 4, 'second wheel applied')
-ui.tabs[2].__scripts.OnDoubleClick(ui.tabs[2])
+ui.tabs[2].__scripts.OnDoubleClick(ui.tabs[2], 'RightButton')
+check(not ui.renameBox.__shown and ns.Widgets.MenuIsOpen(), 'left then right click opens the menu, not rename')
+ns.Widgets.CloseMenu()
+ui.tabs[2].__scripts.OnDoubleClick(ui.tabs[2], 'LeftButton')
+check(ui.renameBox.__shown, 'double left click renames')
 ui.renameBox:SetText('Nope')
 ui.renameBox.__scripts.OnEscapePressed(ui.renameBox)
 ui.renameBox.__scripts.OnEditFocusLost(ui.renameBox)
@@ -925,12 +979,12 @@ check(btn.__attrs.scrollsteps == 3, 'out of range rejected')
 ns.DB.Profile().scrollSteps = 2; ns.Changed()
 
 -- "Reopen on last wheel" checkbox in the editor, and the last wheel surviving a reload
-check(ui.remember.__shown and ui.rememberLabel.__shown, 'remember checkbox shows with two wheels')
-ui.remember.GetChecked = function() return true end
-ui.remember:Click()
-check(ns.DB.Profile().rememberWheel == true and btn.__attrs.remember == true, 'checkbox turns remembering on')
-ui.remember.GetChecked = function() return false end
-ui.remember:Click()
+local remember = ns.Options._ui.rememberWheel
+remember.GetChecked = function() return true end
+remember:Click()
+check(ns.DB.Profile().rememberWheel == true and btn.__attrs.remember == true, 'the Options checkbox turns remembering on')
+remember.GetChecked = function() return false end
+remember:Click()
 check(ns.DB.Profile().rememberWheel == false and btn.__attrs.remember == false, 'and off again')
 ns.Skin.Close(nil, 'cancel', 2)
 check(JestCharDB.lastWheel == 2, 'closing saves the wheel showing')
@@ -1139,9 +1193,9 @@ SlashCmdList.JEST('minimap')
 check(not mb.__shown and JestDB.minimap.hide == true, '/jest minimap toggles it off')
 SlashCmdList.JEST('minimap on')
 check(mb.__shown and JestDB.minimap.hide == false, '/jest minimap on')
-__settings.JEST_MINIMAP_BUTTON.set(false)
-check(not mb.__shown and __settings.JEST_MINIMAP_BUTTON.get() == false, 'the Appearance checkbox hides it')
-__settings.JEST_MINIMAP_BUTTON.set(true)
+ns.Options._ui.minimap.set(false)
+check(not mb.__shown and not ns.MinimapButton.IsShown(), 'the Options checkbox hides it')
+ns.Options._ui.minimap.set(true)
 JestDB.minimap = { angle = 'x', hide = 3 }
 ns.DB.Init()
 check(JestDB.minimap.angle == 225 and JestDB.minimap.hide == false, 'bad saved minimap settings reset')
