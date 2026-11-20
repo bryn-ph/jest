@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.1-beta
 
 - Fixed: characters with the same name on different realms shared one profile choice: picking a profile on one switched the others too. On WoW: Forever the game reports the same realm name for them, so Jest mixed them up. Each character now loads the profile it last used, and a new character's fresh profile is named after it ("Oxe", then "Oxe (2)" for another Oxe).
 
