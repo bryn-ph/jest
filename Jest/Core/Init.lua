@@ -108,6 +108,11 @@ ns.On("ADDON_LOADED", function(_, name)
 	ns.SecureWheel.Apply()
 end)
 
+ns.On("PLAYER_LOGIN", function()
+	ns.Off("PLAYER_LOGIN")
+	ns.DB.RecordCharacter()
+end)
+
 -- Referenced by the TOC's AddonCompartmentFunc.
 function Jest_OnAddonCompartmentClick()
 	ns.Panel.Toggle()

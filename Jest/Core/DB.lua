@@ -138,17 +138,32 @@ DB.DEFAULT_PROFILE = "Default"
 
 local editIndex = 1 -- see DB.EditIndex below
 
--- "Name - Realm" for this character, or nil when the game can't say yet.
+-- This character's GUID, the key in the account-wide JestDB.chars, or nil when the game can't
+-- say yet. Not "Name - Realm": on Forever, GetRealmName() is the same for characters on
+-- different realms, so same-named characters (e.g. one per realm) collided.
 function DB.CharacterKey()
+	local guid = UnitGUID and UnitGUID("player")
+	if type(guid) == "string" and guid:match("^Player%-") then
+		return guid
+	end
+end
+
+-- This character's name, or nil when the game can't say yet.
+function DB.CharacterName()
 	local name = UnitName and UnitName("player")
 	if type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT or name == "Unknown" then
 		return nil
 	end
-	local realm = GetRealmName and GetRealmName()
-	if type(realm) == "string" and realm ~= "" then
-		return name .. " - " .. realm
-	end
 	return name
+end
+
+-- An unused profile name based on `base`: "Oxe", then "Oxe (2)", "Oxe (3)"...
+local function unusedProfileName(base)
+	base = base:sub(1, ns.PROFILE_NAME_MAX - 4)
+	if not DB.FindProfile(base) then return base end
+	local n = 2
+	while DB.FindProfile(("%s (%d)"):format(base, n)) do n = n + 1 end
+	return ("%s (%d)"):format(base, n)
 end
 
 -- Make `name` this character's profile.
@@ -257,7 +272,7 @@ function DB.RenameProfile(text)
 end
 
 -- Delete a profile. Other characters that used it get a fresh profile next time they log in.
--- Deleting this character's own profile moves it to its "Name - Realm" profile if there is
+-- Deleting this character's own profile moves it to a profile named after it if there is
 -- one, otherwise to the first remaining profile (removed.switchedTo). Returns what's needed to
 -- undo it, or nil and a message.
 function DB.DeleteProfile(name)
@@ -273,8 +288,8 @@ function DB.DeleteProfile(name)
 	end
 	JestDB.profiles[found] = nil
 	if found == DB.ProfileName() then
-		local own = DB.CharacterKey()
-		local nextName = (own and JestDB.profiles[own] and own) or DB.ProfileNames()[1]
+		local own = DB.CharacterName() and DB.FindProfile(DB.CharacterName())
+		local nextName = own or DB.ProfileNames()[1]
 		setCurrent(nextName)
 		removed.switchedTo = nextName
 	end
@@ -319,24 +334,47 @@ function DB.Init()
 
 	-- Which character uses which profile, account-wide, so renaming a profile can follow it for
 	-- every character, not just this one.
+	-- Keys are character GUIDs; entries keyed "Name - Realm" (before v0.6.1) are dropped, since
+	-- same-named characters shared one. Each character re-adds itself when it logs in.
 	if type(JestDB.chars) ~= "table" then JestDB.chars = {} end
 	for key, name in pairs(JestDB.chars) do
-		if type(key) ~= "string" or type(name) ~= "string" or not JestDB.profiles[name] then
+		if type(key) ~= "string" or not key:match("^Player%-") or type(name) ~= "string"
+			or not JestDB.profiles[name] then
 			JestDB.chars[key] = nil
 		end
 	end
 
+	-- This character's own saved profile comes first: it's per-character by nature. The
+	-- account-wide list only fills in when that profile is gone, e.g. renamed on another
+	-- character (the list follows renames).
 	local key = DB.CharacterKey()
-	local name = (key and JestDB.chars[key]) or JestCharDB.profile -- the old per-character pointer
+	local name = JestCharDB.profile
+	if type(name) ~= "string" or not JestDB.profiles[name] then
+		name = key and JestDB.chars[key]
+	end
 	if type(name) ~= "string" or not JestDB.profiles[name] then
 		-- A character Jest hasn't seen before starts on a fresh profile of its own, named after it.
 		-- (Characters from before profiles keep the shared "Default" they were already using.)
-		name = key or DB.DEFAULT_PROFILE
+		local charName = DB.CharacterName()
+		if charName then
+			name = unusedProfileName(charName)
+		else
+			name = DB.DEFAULT_PROFILE
+		end
 		if not JestDB.profiles[name] then
 			JestDB.profiles[name] = deepCopy(ns.Defaults.profile)
 		end
 	end
 	setCurrent(name)
+end
+
+-- Once logged in: record this character in the account-wide list, in case the game couldn't
+-- say who it was when the addon loaded.
+function DB.RecordCharacter()
+	local key = DB.CharacterKey()
+	if key and JestCharDB and JestCharDB.profile then
+		JestDB.chars[key] = JestCharDB.profile
+	end
 end
 
 function DB.Profile()
