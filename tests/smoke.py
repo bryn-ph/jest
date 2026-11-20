@@ -63,6 +63,7 @@ UnitSex = function() return __sex or 2 end
 -- mock character name; tests switch characters by changing __name
 UnitName = function() return __name or 'Tester' end
 GetRealmName = function() return 'Realm' end
+UnitGUID = function(unit) return 'Player-1-' .. (__guid or __name or 'Tester') end
 -- cursor and the things that can be dragged onto the wheel
 GetCursorInfo = function() if __cursor then return unpack(__cursor) end end
 ClearCursor = function() __cursor = nil end
@@ -1060,16 +1061,46 @@ JestDB = { version = 2, profiles = { Default = { wheels = { { name = 'Mine', sli
 JestCharDB = { profile = 'Default' }
 __name = 'Main'
 ns.DB.Init(); ns.Changed()
-check(ns.DB.ProfileName() == 'Default' and JestDB.chars['Main - Realm'] == 'Default', 'an existing character keeps Default')
+check(ns.DB.ProfileName() == 'Default' and JestDB.chars['Player-1-Main'] == 'Default', 'an existing character keeps Default')
 -- a new character starts fresh, on a profile of its own
 __name = 'Alt'; JestCharDB = nil
 ns.DB.Init(); ns.Changed()
-check(ns.DB.ProfileName() == 'Alt - Realm' and ns.DB.Wheel(1).name == 'Emotes' and #ns.DB.Wheel(1).slices == 8, 'a new character gets a fresh profile named after it')
+check(ns.DB.ProfileName() == 'Alt' and ns.DB.Wheel(1).name == 'Emotes' and #ns.DB.Wheel(1).slices == 8, 'a new character gets a fresh profile named after it')
 check(JestDB.profiles.Default.wheels[1].name == 'Mine', 'the other profile is untouched')
 -- the account-wide list finds a character's profile even without its per-character file
 __name = 'Main'; JestCharDB = {}
 ns.DB.Init(); ns.Changed()
 check(ns.DB.ProfileName() == 'Default' and btn.__attrs.slices1 == 1, 'characters are matched to their profile account-wide')
+
+-- same name, same GetRealmName() (Forever reports one server name for several realms):
+-- each character still loads its own saved profile, whatever the other picked last
+do
+  local saved = { JestDB = ns.DB.Copy(JestDB) }
+  JestDB.profiles.Paladin = ns.DB.Copy(ns.Defaults.profile)
+  JestDB.profiles.Warrior = ns.DB.Copy(ns.Defaults.profile)
+  JestDB.chars = { ['Oxe - CAMWOW Realm'] = 'Warrior' } -- the old shared key
+  __name, __guid = 'Oxe', 'Pal'
+  local palChar = { profile = 'Paladin' }
+  JestCharDB = palChar
+  ns.DB.Init(); ns.DB.RecordCharacter()
+  check(ns.DB.ProfileName() == 'Paladin', 'a character loads its own saved profile, not the account-wide guess')
+  check(JestDB.chars['Oxe - CAMWOW Realm'] == nil and JestDB.chars['Player-1-Pal'] == 'Paladin', 'old name-keyed entries dropped; characters keyed by GUID')
+  __guid = 'War'; JestCharDB = { profile = 'Warrior' }
+  ns.DB.Init(); ns.DB.RecordCharacter()
+  check(ns.DB.ProfileName() == 'Warrior' and JestDB.chars['Player-1-War'] == 'Warrior', 'the other same-named character keeps its own')
+  __guid = 'Pal'; JestCharDB = palChar
+  ns.DB.Init()
+  check(ns.DB.ProfileName() == 'Paladin', 'and switching back loads the first one again')
+  -- two new characters with the same name get separate fresh profiles
+  __guid = 'New1'; JestCharDB = nil
+  ns.DB.Init()
+  local first = ns.DB.ProfileName()
+  __guid = 'New2'; JestCharDB = nil
+  ns.DB.Init()
+  check(first == 'Oxe' and ns.DB.ProfileName() == 'Oxe (2)', 'same-named new characters get separate fresh profiles')
+  JestDB = saved.JestDB; __guid = nil; __name = 'Main'; JestCharDB = {}
+  ns.DB.Init(); ns.Changed()
+end
 
 -- the editor's profile dropdown
 local rows = function() return JestContextMenu.rows end
@@ -1093,10 +1124,10 @@ openProfiles()
 JestContextMenu.__scripts.OnEvent(JestContextMenu, 'GLOBAL_MOUSE_DOWN')
 check(not JestContextMenu.__shown, 'a click anywhere else still closes it')
 openProfiles()
-check(rows()[1].text:GetText() == 'Alt - Realm' and rows()[2].text:GetText() == 'Default', 'profiles listed alphabetically')
-rowNamed('Alt - Realm'):Click()
-check(ns.DB.ProfileName() == 'Alt - Realm' and JestDB.chars['Main - Realm'] == 'Alt - Realm' and btn.__attrs.slices1 == 8, 'picking a profile switches to it and applies its wheels')
-check(ui.profile.text:GetText() == 'Alt - Realm' and ui.status:GetText():find('Alt - Realm', 1, true), 'and says so')
+check(rows()[1].text:GetText() == 'Alt' and rows()[2].text:GetText() == 'Default', 'profiles listed alphabetically')
+rowNamed('Alt'):Click()
+check(ns.DB.ProfileName() == 'Alt' and JestDB.chars['Player-1-Main'] == 'Alt' and btn.__attrs.slices1 == 8, 'picking a profile switches to it and applies its wheels')
+check(ui.profile.text:GetText() == 'Alt' and ui.status:GetText():find('Alt', 1, true), 'and says so')
 
 openProfiles()
 check(rowNamed('+ New profile...') and not rowNamed('Rename...') and not rowNamed('Copy from...'), 'the dropdown lists profiles, not options')
@@ -1115,11 +1146,11 @@ check(JestDB.profiles.Default ~= ns.DB.Profile(), 'as a copy, not shared')
 ui.undo:Click()
 check(ns.DB.Wheel(1).name == 'Emotes', 'undo puts the profile back')
 
-JestDB.chars['Other - Realm'] = 'Raid'
+JestDB.chars['Player-1-Other'] = 'Raid'
 openOptions(); rowNamed('Rename...'):Click()
 JestPrompt.box:SetText('Raids'); JestPrompt.okButton:Click()
 check(ns.DB.ProfileName() == 'Raids' and JestDB.profiles.Raid == nil, 'rename')
-check(JestDB.chars['Main - Realm'] == 'Raids' and JestDB.chars['Other - Realm'] == 'Raids', 'every character using it follows the rename')
+check(JestDB.chars['Player-1-Main'] == 'Raids' and JestDB.chars['Player-1-Other'] == 'Raids', 'every character using it follows the rename')
 
 ns.DB.Wheel(1).name = 'Changed'
 openOptions(); rowNamed('Reset to default wheel'):Click()
@@ -1128,18 +1159,18 @@ ui.undo:Click()
 check(ns.DB.Wheel(1).name == 'Changed', 'reset can be undone')
 
 openProfiles()
-check(rowNamed('Raids').remove.__shown and rowNamed('Alt - Realm').remove.__shown, 'every profile has a delete x')
-rowNamed('Alt - Realm').remove:Click()
-check(JestDB.profiles['Alt - Realm'] == nil and JestDB.chars['Alt - Realm'] == nil, 'x deletes the profile and frees its character')
-check(JestContextMenu.__shown and not rowNamed('Alt - Realm'), 'the list stays open, without it')
+check(rowNamed('Raids').remove.__shown and rowNamed('Alt').remove.__shown, 'every profile has a delete x')
+rowNamed('Alt').remove:Click()
+check(JestDB.profiles['Alt'] == nil and JestDB.chars['Player-1-Alt'] == nil, 'x deletes the profile and frees its character')
+check(JestContextMenu.__shown and not rowNamed('Alt'), 'the list stays open, without it')
 ui.undo:Click()
-check(JestDB.profiles['Alt - Realm'] and JestDB.chars['Alt - Realm'] == 'Alt - Realm', 'undo brings it back')
--- deleting the profile in use moves this character to its own profile ("Main - Realm" doesn't
+check(JestDB.profiles['Alt'] and JestDB.chars['Player-1-Alt'] == 'Alt', 'undo brings it back')
+-- deleting the profile in use moves this character to a profile named after it ("Main" doesn't
 -- exist here, so the first remaining one), and undo moves it back
 local raids = ns.DB.Profile()
 openProfiles()
 rowNamed('Raids').remove:Click()
-check(JestDB.profiles.Raids == nil and ns.DB.ProfileName() == 'Alt - Realm' and ui.profile.text:GetText() == 'Alt - Realm', 'deleting the profile in use switches to another')
+check(JestDB.profiles.Raids == nil and ns.DB.ProfileName() == 'Alt' and ui.profile.text:GetText() == 'Alt', 'deleting the profile in use switches to another')
 check(ui.status:GetText():find('now uses', 1, true), 'and says where it went')
 ui.undo:Click()
 check(ns.DB.ProfileName() == 'Raids' and ns.DB.Profile() == raids, 'undo restores it and switches back')
@@ -1148,7 +1179,7 @@ for _, name in ipairs(ns.DB.ProfileNames()) do if name ~= 'Raids' then JestDB.pr
 openProfiles()
 check(not rowNamed('Raids').remove.__shown, 'no x on the last profile')
 check(not ns.DB.DeleteProfile('Raids'), 'the last profile cannot be deleted')
-JestDB.profiles['Alt - Realm'] = ns.DB.Copy(ns.Defaults.profile)
+JestDB.profiles['Alt'] = ns.DB.Copy(ns.Defaults.profile)
 JestDB.profiles.Default = { wheels = { { name = 'Mine', slices = { { kind = 'emote', value = 'WAVE' } } } } }
 ns.DB.Init(); ns.Changed()
 
@@ -1170,9 +1201,9 @@ SlashCmdList.JEST('profile nope')
 check(ns.DB.ProfileName() == 'Arena', 'an unknown profile name changes nothing')
 
 -- saved character list is cleaned on load
-JestDB.chars[1] = 'x'; JestDB.chars['Gone - Realm'] = 'Missing'
+JestDB.chars[1] = 'x'; JestDB.chars['Player-1-Gone'] = 'Missing'
 ns.DB.Init()
-check(JestDB.chars[1] == nil and JestDB.chars['Gone - Realm'] == nil, 'bad or stale character entries dropped')
+check(JestDB.chars[1] == nil and JestDB.chars['Player-1-Gone'] == nil, 'bad or stale character entries dropped')
 __name = nil
 
 -- ===== minimap button =====
